@@ -37,6 +37,7 @@ import net.runelite.api.events.*;
 import static net.runelite.api.MenuAction.MENU_ACTION_DEPRIORITIZE_OFFSET;
 
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.PluginChanged;
@@ -50,9 +51,9 @@ import net.runelite.client.util.WildcardMatcher;
 import java.util.*;
 
 @PluginDescriptor(
-		name = "Improved Tile Indicators",
-		description = "An improved version of the tile indicators plugin",
-		tags = {"rs3", "overlay", "tile", "indicators"}
+		name = "Best Tile Indicators",
+		description = "Draw overlays beneath players and NPCs, with adjustable opacity and a crowd cutoff.",
+		tags = {"overlay", "tile", "indicators"}
 )
 @Slf4j
 public class ImprovedTileIndicatorsPlugin extends Plugin
@@ -71,12 +72,18 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 	@Inject
 	private ClientThread clientThread;
 
+	@Inject
+	private RenderCallbackManager renderCallbackManager;
+
+	@Inject
+	private RenderedActors renderedActors;
+
 	@Getter(AccessLevel.PACKAGE)
 	private final Set<NPC> onTopNpcs = new HashSet<>();
 	private List<String> onTopNPCNames = new ArrayList<>();
 
-	private static final String DRAW_ABOVE = "Draw-Above";
-	private static final String DRAW_BELOW = "Draw-Below";
+	private static final String ADD_NPC_NAME = "Add NPC name";
+	private static final String REMOVE_NPC_NAME = "Remove NPC name";
 	private static final String UNTAG_ALL = "Un-tag-All";
 
 	@Provides
@@ -88,6 +95,8 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		renderedActors.beginFrame(null);
+		renderCallbackManager.register(renderedActors);
 		overlayManager.add(overlay);
 		clientThread.invoke(this::rebuild);
 	}
@@ -96,6 +105,14 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(overlay);
+		renderCallbackManager.unregister(renderedActors);
+		renderedActors.beginFrame(null);
+	}
+
+	@Subscribe
+	public void onBeforeRender(BeforeRender event)
+	{
+		renderedActors.beginFrame(client.getLocalPlayer());
 	}
 
 	@Subscribe
@@ -105,6 +122,7 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 				event.getGameState() == GameState.HOPPING)
 		{
 			onTopNpcs.clear();
+			renderedActors.beginFrame(null);
 		}
 	}
 
@@ -143,6 +161,15 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 		onTopNpcs.remove(npc);
 	}
 
+	@Subscribe
+	public void onNpcChanged(NpcChanged event)
+	{
+		NPC npc = event.getNpc();
+		String name = npc.getName();
+		if (name != null && onTopMatchesNPCName(name)) onTopNpcs.add(npc);
+		else onTopNpcs.remove(npc);
+	}
+
 
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
@@ -158,19 +185,21 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 
 		if (menuAction == MenuAction.EXAMINE_NPC && client.isKeyPressed(KeyCode.KC_SHIFT) && config.overlaysBelowNPCs())
 		{
-			final String npcName = getNameForCachedNPC(event.getIdentifier());
+			final int worldViewId = event.getMenuEntry().getWorldViewId();
+			final String npcName = getNameForCachedNPC(event.getIdentifier(), worldViewId);
 			if (npcName == null) return;
 			boolean matchesList = onTopNPCNames.stream()
 					.filter(highlight -> !highlight.equalsIgnoreCase(npcName))
 					.anyMatch(highlight -> WildcardMatcher.matches(highlight, npcName));
 
-			// Only show draw options to npcs not affected by a wildcard entry, as wildcards will not be removed by menu options
+			// Wildcard entries must be edited in the name box, not removed by an exact-name menu action.
 			if (!matchesList)
 			{
 				client.createMenuEntry(-1)
-					.setOption(onTopNPCNames.stream().anyMatch(npcName::equalsIgnoreCase) ? DRAW_BELOW : DRAW_ABOVE)
+					.setOption(onTopNPCNames.stream().anyMatch(npcName::equalsIgnoreCase) ? REMOVE_NPC_NAME : ADD_NPC_NAME)
 					.setTarget(event.getTarget())
 					.setIdentifier(event.getIdentifier())
+					.setWorldViewId(worldViewId)
 					.setType(MenuAction.RUNELITE)
 					.onClick(this::toggleDraw);
 			}
@@ -179,7 +208,7 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 
 	public void toggleDraw(MenuEntry click)
 	{
-		final String name = getNameForCachedNPC(click.getIdentifier());
+		final String name = getNameForCachedNPC(click.getIdentifier(), click.getWorldViewId());
 		if (name == null) return;
 		// this trips a config change which triggers the overlay rebuild
 		updateNpcsToDrawAbove(name);
@@ -202,12 +231,18 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 	{
 		final String configNpcs = config.getTopNPCs();
 
-		if (configNpcs.isEmpty())
+		if (configNpcs == null || configNpcs.trim().isEmpty())
 		{
 			return Collections.emptyList();
 		}
 
-		return Text.fromCSV(configNpcs);
+		List<String> names = new ArrayList<>();
+		for (String name : Text.fromCSV(configNpcs))
+		{
+			String trimmed = name.trim();
+			if (!trimmed.isEmpty()) names.add(trimmed);
+		}
+		return names;
 	}
 
 	void rebuild()
@@ -221,7 +256,13 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 			return;
 		}
 
-		for (NPC npc : client.getNpcs())
+		rebuildWorld(client.getTopLevelWorldView());
+	}
+
+	private void rebuildWorld(WorldView world)
+	{
+		if (world == null) return;
+		for (NPC npc : world.npcs())
 		{
 			final String npcName = npc.getName();
 
@@ -235,6 +276,7 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 				onTopNpcs.add(npc);
 			}
 		}
+		for (WorldView child : world.worldViews()) rebuildWorld(child);
 	}
 
 	private boolean onTopMatchesNPCName(String npcName)
@@ -250,9 +292,11 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 		return false;
 	}
 
-	private String getNameForCachedNPC(int id)
+	private String getNameForCachedNPC(int id, int worldViewId)
 	{
-		final NPC npc = client.getTopLevelWorldView().npcs().byIndex(id);
+		final WorldView world = client.getWorldView(worldViewId);
+		if (world == null) return null;
+		final NPC npc = world.npcs().byIndex(id);
 
 		if (npc == null)
 		{

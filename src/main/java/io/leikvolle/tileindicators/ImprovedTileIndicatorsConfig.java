@@ -25,8 +25,6 @@
  */
 package io.leikvolle.tileindicators;
 
-import java.awt.Color;
-
 import net.runelite.client.config.*;
 
 @ConfigGroup("improvedtileindicators")
@@ -34,8 +32,8 @@ public interface ImprovedTileIndicatorsConfig extends Config
 {
 
 	@ConfigSection(
-			name = "Player Tile indicators",
-			description = "Settings replacing the normal tile indicators plugin",
+			name = "Overlay settings",
+			description = "Settings for drawing overlays around players and NPCs",
 			position = 0
 	)
 	String tileIndicatorsSection = "tileIndicatorsSection";
@@ -52,66 +50,36 @@ public interface ImprovedTileIndicatorsConfig extends Config
 		return true;
 	}
 
-	@ConfigSection(
-			name = "Destination Tile",
-			description = "Settings for modifying the destination tile",
-			position = 1
-	)
-	String destinationTileSection = "destinationTileSection";
-
 	@ConfigItem(
-			keyName = "customDestinationTile",
-			name = "Custom destination tile",
-			description = "Enables the use of custom tile indicators on destination",
-			section = destinationTileSection,
-			position = 2
-	)
-	default boolean customDestinationTile() { return false;}
-
-	@ConfigItem(
-			keyName = "highlightDestinationStyle",
-			name = "Destination Tile Style",
-			description = "The style of the destination tile",
-			section = destinationTileSection,
+			keyName = "overlaysBelowAllNPCs",
+			name = "Draw overlays below all NPCs",
+			description = "Requires GPU. Draws overlays below all NPCs, regardless of the name list. Pauses when the loaded NPC count reaches the population cutoff.",
+			section = tileIndicatorsSection,
 			position = 3
 	)
-	default TileStyle highlightDestinationStyle()  {return TileStyle.RS3;}
-
-	@ConfigItem(
-			keyName = "destinationTileBorderWitdh",
-			name = "Destination tile border width",
-			description = "The width of the custom destination indicator",
-			section = destinationTileSection,
-			position = 4
-	)
-	default double destinationTileBorderWidth() { return 2; }
-
-	@Alpha
-	@ConfigItem(
-			keyName = "highlightDestinationColor",
-			name = "Destination tile",
-			description = "Configures the highlight color of current destination",
-			section = destinationTileSection,
-			position = 5
-	)
-	default Color highlightDestinationColor()
+	default boolean overlaysBelowAllNPCs()
 	{
-		return new Color(0xFFB3B03F);
+		return true;
 	}
 
-	@ConfigSection(
-			name = "NPC Indicators",
-			description = "Settings enhancing the standard NPC indicators",
+	@ConfigItem(
+			keyName = "overlaysBelowOtherPlayers",
+			name = "Draw overlays below other players",
+			description = "Requires GPU. Draws overlays below other players. Pauses when their count reaches the configured population cutoff. Your own player is controlled separately.",
+			section = tileIndicatorsSection,
 			position = 2
 	)
-	String npcIndicatorsSection = "npcIndicatorsSection";
+	default boolean overlaysBelowOtherPlayers()
+	{
+		return true;
+	}
 
 	@ConfigItem(
 			keyName = "overlaysBelowNPCs",
-			name = "Draw overlays below NPCs",
-			description = "Requires GPU. Draws overlays below specified NPCs. CAUTION: Will make your game laggy if many NPCs are drawn above overlay at once. Best used for bosses, not large groups of NPCs.",
-			section = npcIndicatorsSection,
-			position = 6
+			name = "Draw overlays below named NPCs",
+			description = "Requires GPU. Draws overlays below NPCs matching the names below. Works with Draw overlays below all NPCs turned off and uses the same population cutoff. A blank name list affects no NPCs.",
+			section = tileIndicatorsSection,
+			position = 4
 	)
 	default boolean overlaysBelowNPCs()
 	{
@@ -119,27 +87,43 @@ public interface ImprovedTileIndicatorsConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = "maxNPCsDrawn",
-			name = "NPC limit",
-			description = "The number of NPCs in the scene at a time to be affected by this plugin. Will affect FPS.",
-			section = npcIndicatorsSection,
-			position = 7
-	)
-	@Range(
-			max = 20
-	)
-	default int maxNPCsDrawn() {return 10;}
-
-	@ConfigItem(
 			keyName = "topNPCs",
-			name = "NPCs to draw on top",
-			description = "List of NPCs to draw above overlays. To add NPCs, shift right-click them and click Draw-Above.",
-			section = npcIndicatorsSection,
-			position = 8
+			name = "NPC names",
+			description = "Comma-separated names for Draw overlays below named NPCs; * wildcards are supported. Blank affects no NPCs in named mode. Shift-right-click an NPC to add or remove its name. The all-NPC checkbox ignores this list.",
+			section = tileIndicatorsSection,
+			position = 5
 	)
 	default String getTopNPCs()
 	{
 		return "";
+	}
+
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	// Keep the stored key so existing opacity preferences carry over.
+	@ConfigItem(
+			keyName = "npcOverlayOpacity",
+			name = "Overlay opacity",
+			description = "How much of an overlay remains visible over characters enabled above: 0% hides it, 100% keeps its original opacity. Applies to your player, other players, and all or selected NPCs.",
+			section = tileIndicatorsSection,
+			position = 6
+	)
+	default int overlayOpacity()
+	{
+		return 10;
+	}
+
+	@Range(min = 0, max = 500)
+	@ConfigItem(
+			keyName = "crowdLimit",
+			name = "Crowd cutoff",
+			description = "Shared cutoff for other players and NPCs, counted separately. Each category pauses at this count or higher and resumes below it, including NPCs selected by name. Your own player is unaffected. 0 disables both crowd effects.",
+			section = tileIndicatorsSection,
+			position = 7
+	)
+	default int crowdLimit()
+	{
+		return 80;
 	}
 
 	@ConfigItem(

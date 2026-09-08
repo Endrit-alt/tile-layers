@@ -25,269 +25,101 @@
  */
 package io.leikvolle.tileindicators;
 
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.util.Comparator;
-import java.util.stream.Collectors;
-import javax.annotation.Nonnull;
+import java.awt.Dimension;
+import java.awt.Graphics2D;
 import javax.inject.Inject;
 
-import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.*;
-import net.runelite.api.Point;
+import net.runelite.api.Actor;
+import net.runelite.api.Client;
+import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.OverlayPriority;
-import net.runelite.client.util.ImageUtil;
 
-@Slf4j
 public class ImprovedTileIndicatorsOverlay extends Overlay {
     private final Client client;
     private final ImprovedTileIndicatorsConfig config;
+    private final ActorOverlayMask actorMask;
+    private final CrowdActors crowdActors = new CrowdActors();
 
     @Inject
     private ImprovedTileIndicatorsPlugin plugin;
 
-    private final BufferedImage ARROW_ICON;
-
-    private LocalPoint lastDestination;
-    private LocalPoint lastlastDestination;
-    private int spawnGameCycle;
-    private int despawnGameCycle;
+    @Inject
+    private RenderedActors renderedActors;
 
     @Inject
     private ImprovedTileIndicatorsOverlay(Client client, ImprovedTileIndicatorsConfig config)
     {
         this.client = client;
         this.config = config;
+        this.actorMask = new ActorOverlayMask(client);
         setPosition(OverlayPosition.DYNAMIC);
         setLayer(OverlayLayer.ABOVE_SCENE);
         setPriority(0.6f);
-
-        ARROW_ICON = ImageUtil.loadImageResource(ImprovedTileIndicatorsPlugin.class, "arrow.png");
     }
 
     @Override
     public Dimension render(Graphics2D graphics)
     {
 
-        final WorldPoint playerPos = client.getLocalPlayer().getWorldLocation();
-        if (playerPos == null)
+        final Player player = client.getLocalPlayer();
+        if (player == null)
         {
             return null;
         }
-        final LocalPoint playerPosLocal = LocalPoint.fromWorld(client, playerPos);
+        final LocalPoint playerPosLocal = player.getLocalLocation();
         if (playerPosLocal == null)
         {
             return null;
         }
 
-        if (config.customDestinationTile()) {
-            if (lastDestination != null && !lastDestination.equals(client.getLocalDestinationLocation())) {
-                lastlastDestination = lastDestination;
-                despawnGameCycle = client.getGameCycle();
-            }
-            if (lastDestination == null || !lastDestination.equals(client.getLocalDestinationLocation()))
+        if (client.isGpu())
+        {
+            int opacity = Math.max(0, Math.min(100, config.overlayOpacity()));
+            if (opacity == 100) return null;
+            boolean belowPlayer = config.overlaysBelowPlayer();
+            boolean belowOtherPlayers = config.overlaysBelowOtherPlayers();
+            boolean belowAllNpcs = config.overlaysBelowAllNPCs();
+            boolean belowNamedNpcs = !belowAllNpcs && config.overlaysBelowNPCs()
+                    && !plugin.getOnTopNpcs().isEmpty();
+            boolean belowNpcs = belowAllNpcs || belowNamedNpcs;
+            if (!belowPlayer && !belowOtherPlayers && !belowNpcs) return null;
+            int crowdLimit = config.crowdLimit();
+            crowdActors.collect(client.getTopLevelWorldView(), player,
+                    belowOtherPlayers ? crowdLimit : 0,
+                    belowNpcs ? crowdLimit : 0);
+            try
             {
-                if(client.getLocalDestinationLocation() != null) {
-                    spawnGameCycle = client.getGameCycle();
+                if (!belowPlayer && !crowdActors.playersAllowed() && !crowdActors.npcsAllowed()) return null;
+                actorMask.beginFrame(graphics);
+                if (!actorMask.hasOverlay()) return null;
+                // One union mask for every enabled actor category: overlapping
+                // players and NPCs attenuate an overlay pixel only once.
+                actorMask.beginPass(graphics, opacity);
+                if (belowPlayer) maskActor(player);
+                for (int i = 0; i < crowdActors.playerCount(); i++) maskActor(crowdActors.player(i));
+                for (int i = 0; i < crowdActors.npcCount(); i++)
+                {
+                    Actor npc = crowdActors.npc(i);
+                    if (belowAllNpcs || plugin.getOnTopNpcs().contains(npc)) maskActor(npc);
                 }
-                lastDestination = client.getLocalDestinationLocation();
+                actorMask.endPass(graphics);
             }
-            switch (config.highlightDestinationStyle())
+            finally
             {
-                case RS3:
-                    renderRS3Tile(graphics, lastDestination, config.highlightDestinationColor(), true, true);
-                    renderRS3Tile(graphics, lastlastDestination, config.highlightDestinationColor(), false, false);
-                    break;
-                case RS3_NO_ARROW:
-                    renderRS3Tile(graphics, lastDestination, config.highlightDestinationColor(), false, true);
-                    renderRS3Tile(graphics, lastlastDestination, config.highlightDestinationColor(), false, false);
-                    break;
-            }
-        }
-
-        if (config.overlaysBelowPlayer() && client.isGpu())
-        {
-            removePlayer(graphics, client.getLocalPlayer());
-        }
-        if (config.overlaysBelowNPCs() && client.isGpu())
-        {
-            // Limits the number of npcs drawn below overlays, ranks the NPCs by distance to player.
-            for (NPC npc : plugin.getOnTopNpcs().stream().sorted(Comparator.comparingInt(npc -> npc.getLocalLocation().distanceTo(playerPosLocal))).limit(config.maxNPCsDrawn()).collect(Collectors.toSet())) {
-                removeNpc(graphics, npc);
+                crowdActors.clear();
             }
         }
         return null;
     }
 
-    private void renderRS3Tile(final Graphics2D graphics, final LocalPoint dest, final Color color, boolean drawArrow, boolean appearing)
+    private void maskActor(Actor actor)
     {
-        if (dest == null)
-        {
-            return;
-        }
-
-        double size;
-        if (appearing) {
-            size = 0.65 * (Math.min(7.0, client.getGameCycle() - spawnGameCycle) / 7.0);
-        } else {
-            size = 0.65 * ((7 - (client.getGameCycle() - despawnGameCycle)) / 7.0);
-        }
-
-        if (size < 0) return;
-
-
-        final Polygon poly = getCanvasTargetTileCirclePoly(client, dest, size, client.getPlane(), 10);
-        final Polygon shadow = getCanvasTargetTileCirclePoly(client, dest, size, client.getPlane(), 0);
-        Point canvasLoc = Perspective.getCanvasImageLocation(client, dest, ARROW_ICON, 150 + (int) (20 * Math.sin(client.getGameCycle() / 10.0)));
-
-        if (poly != null)
-        {
-
-            final Stroke originalStroke = graphics.getStroke();
-            graphics.setStroke(new BasicStroke((float) config.destinationTileBorderWidth()));
-            graphics.setColor(new Color(0x8D000000, true));
-            graphics.draw(shadow);
-            graphics.setColor(color);
-            graphics.draw(poly);
-            graphics.setStroke(originalStroke);
-        }
-
-        if (canvasLoc != null && drawArrow && shadow != null)
-        {
-            // TODO: improve scale as you zoom out
-            double imageScale = 0.8 * Math.min(client.get3dZoom() / 500.0, 1);
-            graphics.drawImage(ARROW_ICON, (int) (shadow.getBounds().width / 2 + shadow.getBounds().x - ARROW_ICON.getWidth() * imageScale / 2), canvasLoc.getY(), (int) (ARROW_ICON.getWidth() * imageScale), (int) (ARROW_ICON.getHeight() * imageScale), null);
-        }
-
-    }
-
-    public static Polygon getCanvasTargetTileCirclePoly(
-            @Nonnull Client client,
-            @Nonnull LocalPoint localLocation,
-            double size,
-            int plane,
-            int zOffset)
-    {
-        final int sceneX = localLocation.getSceneX();
-        final int sceneY = localLocation.getSceneY();
-
-        if (sceneX < 0 || sceneY < 0 || sceneX >= Perspective.SCENE_SIZE || sceneY >= Perspective.SCENE_SIZE)
-        {
-            return null;
-        }
-
-        Polygon poly = new Polygon();
-        int resolution = 64;
-        final int height = Perspective.getTileHeight(client, localLocation, plane) - zOffset;
-
-        for (int i = 0; i < resolution; i++) {
-            double angle = ((float) i / resolution) * 2 * Math.PI;
-            double offsetX = Math.cos(angle);
-            double offsetY = Math.sin(angle);
-            int x = (int) (localLocation.getX() + (offsetX * Perspective.LOCAL_TILE_SIZE * size));
-            int y = (int) (localLocation.getY() + (offsetY * Perspective.LOCAL_TILE_SIZE * size));
-            Point p = Perspective.localToCanvas(client, x, y, height);
-            if (p == null) {
-                continue;
-            }
-            poly.addPoint(p.getX(), p.getY());
-
-        }
-
-        return poly;
-    }
-
-    private void removePlayer(final Graphics2D graphics, final Player player) {
-        final int localZ = Perspective.getFootprintTileHeight(client, player.getLocalLocation(), client.getTopLevelWorldView().getPlane(), player.getFootprintSize()) - player.getAnimationHeightOffset();
-        removeActor(graphics, player, localZ);
-    }
-
-    private void removeNpc(final Graphics2D graphics, final NPC npc) {
-        final int localZ = Perspective.getFootprintTileHeight(client, npc.getLocalLocation(), client.getTopLevelWorldView().getPlane(), npc.getComposition().getFootprintSize()) - npc.getAnimationHeightOffset();
-        removeActor(graphics, npc, localZ);
-    }
-
-    private void removeActor(final Graphics2D graphics, final Actor actor, final int localZ) {
-        final int clipX1 = client.getViewportXOffset();
-        final int clipY1 = client.getViewportYOffset();
-        final int clipX2 = client.getViewportWidth() + clipX1;
-        final int clipY2 = client.getViewportHeight() + clipY1;
-        Object origAA = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
-        graphics.setRenderingHint(
-                RenderingHints.KEY_ANTIALIASING,
-                RenderingHints.VALUE_ANTIALIAS_OFF);
-        Model model = actor.getModel();
-        int vCount = model.getVerticesCount();
-        float[] x3d = model.getVerticesX();
-        float[] y3d = model.getVerticesY();
-        float[] z3d = model.getVerticesZ();
-
-        int[] x2d = new int[vCount];
-        int[] y2d = new int[vCount];
-
-        final LocalPoint lp = actor.getLocalLocation();
-
-        final int localX = lp.getX();
-        final int localY = lp.getY();
-
-        int rotation = actor.getCurrentOrientation();
-
-        Perspective.modelToCanvas(client, vCount, localX, localY, localZ, rotation, x3d, z3d, y3d, x2d, y2d);
-
-        boolean anyVisible = false;
-
-        for (int i = 0; i < vCount; i++) {
-            int x = x2d[i];
-            int y = y2d[i];
-
-            boolean visibleX = x >= clipX1 && x < clipX2;
-            boolean visibleY = y >= clipY1 && y < clipY2;
-            anyVisible |= visibleX && visibleY;
-        }
-
-        if (!anyVisible) return;
-
-        int tCount = model.getFaceCount();
-        int[] tx = model.getFaceIndices1();
-        int[] ty = model.getFaceIndices2();
-        int[] tz = model.getFaceIndices3();
-
-        final byte[] triangleTransparencies = model.getFaceTransparencies();
-
-        Composite orig = graphics.getComposite();
-        graphics.setComposite(AlphaComposite.Clear);
-        graphics.setColor(Color.WHITE);
-        for (int i = 0; i < tCount; i++) {
-            // Cull tris facing away from the camera
-            if (getTriDirection(x2d[tx[i]], y2d[tx[i]], x2d[ty[i]], y2d[ty[i]], x2d[tz[i]], y2d[tz[i]]) >= 0)
-            {
-                continue;
-            }
-            if (triangleTransparencies == null || (triangleTransparencies[i] & 255) < 254) {
-                Polygon p = new Polygon(
-                        new int[]{x2d[tx[i]], x2d[ty[i]], x2d[tz[i]]},
-                        new int[]{y2d[tx[i]], y2d[ty[i]], y2d[tz[i]]},
-                        3);
-                graphics.fill(p);
-            }
-        }
-        graphics.setComposite(orig);
-        graphics.setRenderingHint(
-                RenderingHints.KEY_ANTIALIASING,
-                origAA);
-    }
-
-    private int getTriDirection(int x1, int y1, int x2, int y2, int x3, int y3) {
-        int x4 = x2 - x1;
-        int y4 = y2 - y1;
-        int x5 = x3 - x1;
-        int y5 = y3 - y1;
-        return x4 * y5 - y4 * x5;
+        if (!renderedActors.contains(actor)) return;
+        final int localZ = ActorHeight.get(client, actor);
+        if (localZ != ActorHeight.UNAVAILABLE) actorMask.addActor(actor, localZ);
     }
 
 }
