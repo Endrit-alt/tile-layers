@@ -1,4 +1,4 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
@@ -6,7 +6,7 @@ import net.runelite.api.Player;
 import net.runelite.api.Renderable;
 import net.runelite.api.WallObject;
 import org.junit.Test;
-import static io.leikvolle.tileindicators.ActorOverlayMaskTest.*;
+import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
 
 public class RenderedActorsTest

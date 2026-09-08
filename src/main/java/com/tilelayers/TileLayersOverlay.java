@@ -23,7 +23,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.awt.Dimension;
 import java.awt.Graphics2D;
@@ -37,20 +37,20 @@ import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
-public class ImprovedTileIndicatorsOverlay extends Overlay {
+public class TileLayersOverlay extends Overlay {
     private final Client client;
-    private final ImprovedTileIndicatorsConfig config;
+    private final TileLayersConfig config;
     private final ActorOverlayMask actorMask;
     private final CrowdActors crowdActors = new CrowdActors();
 
     @Inject
-    private ImprovedTileIndicatorsPlugin plugin;
+    private TileLayersPlugin plugin;
 
     @Inject
     private RenderedActors renderedActors;
 
     @Inject
-    private ImprovedTileIndicatorsOverlay(Client client, ImprovedTileIndicatorsConfig config)
+    private TileLayersOverlay(Client client, TileLayersConfig config)
     {
         this.client = client;
         this.config = config;

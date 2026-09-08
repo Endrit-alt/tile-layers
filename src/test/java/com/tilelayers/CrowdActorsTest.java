@@ -1,10 +1,10 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.runelite.api.*;
 import org.junit.Test;
-import static io.leikvolle.tileindicators.ActorOverlayMaskTest.*;
+import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
 
 public class CrowdActorsTest

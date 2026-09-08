@@ -1,4 +1,4 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -11,7 +11,7 @@ import java.util.Map;
 import net.runelite.api.*;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
-import static io.leikvolle.tileindicators.ActorOverlayMaskTest.*;
+import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
 
 public class OtherPlayerOverlayTest
@@ -65,10 +65,10 @@ public class OtherPlayerOverlayTest
                 "getBufferProvider", TriangleMaskRasterizerTest.buffer(f.image)));
         Map<String, Object> settings = values("overlaysBelowPlayer", true, "overlaysBelowOtherPlayers", true,
                 "overlaysBelowAllNPCs", true, "overlayOpacity", 10, "crowdLimit", 80);
-        Constructor<ImprovedTileIndicatorsOverlay> constructor = ImprovedTileIndicatorsOverlay.class
-                .getDeclaredConstructor(Client.class, ImprovedTileIndicatorsConfig.class);
+        Constructor<TileLayersOverlay> constructor = TileLayersOverlay.class
+                .getDeclaredConstructor(Client.class, TileLayersConfig.class);
         constructor.setAccessible(true);
-        ImprovedTileIndicatorsOverlay overlay = constructor.newInstance(client, stub(ImprovedTileIndicatorsConfig.class, settings));
+        TileLayersOverlay overlay = constructor.newInstance(client, stub(TileLayersConfig.class, settings));
         RenderedActors rendered = attachRenderedActors(overlay);
         Graphics2D graphics = f.image.createGraphics();
         int[][] cases = {{79, 79, 80}, {80, 79, 80}, {79, 80, 80}, {80, 80, 80}, {81, 1, 80}, {1, 81, 80},
@@ -103,11 +103,11 @@ public class OtherPlayerOverlayTest
             }
         }
 
-        ImprovedTileIndicatorsPlugin plugin = new ImprovedTileIndicatorsPlugin();
-        plugin.config = stub(ImprovedTileIndicatorsConfig.class, settings);
-        Field clientField = ImprovedTileIndicatorsPlugin.class.getDeclaredField("client");
+        TileLayersPlugin plugin = new TileLayersPlugin();
+        plugin.config = stub(TileLayersConfig.class, settings);
+        Field clientField = TileLayersPlugin.class.getDeclaredField("client");
         clientField.setAccessible(true); clientField.set(plugin, client);
-        Field pluginField = ImprovedTileIndicatorsOverlay.class.getDeclaredField("plugin");
+        Field pluginField = TileLayersOverlay.class.getDeclaredField("plugin");
         pluginField.setAccessible(true); pluginField.set(overlay, plugin);
         settings.put("overlaysBelowPlayer", false);
         settings.put("crowdLimit", 80);
@@ -202,13 +202,13 @@ public class OtherPlayerOverlayTest
             if (method.getName().equals("getWorldView")) return (int) args[0] == 7 ? child : top;
             return method.invoke(base, args);
         });
-        ImprovedTileIndicatorsConfig config = stub(ImprovedTileIndicatorsConfig.class,
+        TileLayersConfig config = stub(TileLayersConfig.class,
                 values("overlaysBelowPlayer", belowLocal, "overlaysBelowOtherPlayers", belowOthers,
                         "overlaysBelowAllNPCs", includeNpc, "overlayOpacity", opacity, "crowdLimit", 80));
-        Constructor<ImprovedTileIndicatorsOverlay> constructor = ImprovedTileIndicatorsOverlay.class
-                .getDeclaredConstructor(Client.class, ImprovedTileIndicatorsConfig.class);
+        Constructor<TileLayersOverlay> constructor = TileLayersOverlay.class
+                .getDeclaredConstructor(Client.class, TileLayersConfig.class);
         constructor.setAccessible(true);
-        ImprovedTileIndicatorsOverlay overlay = constructor.newInstance(client, config);
+        TileLayersOverlay overlay = constructor.newInstance(client, config);
         recordFrame(attachRenderedActors(overlay), local, top);
 
         BufferedImage expected = new BufferedImage(513, 385, BufferedImage.TYPE_INT_ARGB);
@@ -255,10 +255,10 @@ public class OtherPlayerOverlayTest
                 "getBufferProvider", TriangleMaskRasterizerTest.buffer(f.image)));
         Map<String, Object> settings = values("overlaysBelowPlayer", true, "overlaysBelowOtherPlayers", true,
                 "overlaysBelowAllNPCs", true, "crowdLimit", 80);
-        Constructor<ImprovedTileIndicatorsOverlay> constructor = ImprovedTileIndicatorsOverlay.class
-                .getDeclaredConstructor(Client.class, ImprovedTileIndicatorsConfig.class);
+        Constructor<TileLayersOverlay> constructor = TileLayersOverlay.class
+                .getDeclaredConstructor(Client.class, TileLayersConfig.class);
         constructor.setAccessible(true);
-        ImprovedTileIndicatorsOverlay overlay = constructor.newInstance(client, stub(ImprovedTileIndicatorsConfig.class, settings));
+        TileLayersOverlay overlay = constructor.newInstance(client, stub(TileLayersConfig.class, settings));
         RenderedActors rendered = attachRenderedActors(overlay);
         BufferedImage expected = new BufferedImage(513, 385, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = f.image.createGraphics(), reference = expected.createGraphics();
@@ -307,10 +307,10 @@ public class OtherPlayerOverlayTest
         graphics.dispose(); reference.dispose();
     }
 
-    private static RenderedActors attachRenderedActors(ImprovedTileIndicatorsOverlay overlay) throws Exception
+    private static RenderedActors attachRenderedActors(TileLayersOverlay overlay) throws Exception
     {
         RenderedActors rendered = new RenderedActors();
-        Field field = ImprovedTileIndicatorsOverlay.class.getDeclaredField("renderedActors");
+        Field field = TileLayersOverlay.class.getDeclaredField("renderedActors");
         field.setAccessible(true); field.set(overlay, rendered);
         return rendered;
     }

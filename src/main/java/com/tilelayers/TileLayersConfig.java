@@ -23,12 +23,12 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import net.runelite.client.config.*;
 
 @ConfigGroup("improvedtileindicators")
-public interface ImprovedTileIndicatorsConfig extends Config
+public interface TileLayersConfig extends Config
 {
 
 	@ConfigItem(

@@ -1,4 +1,4 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.util.Collections;
 import java.util.IdentityHashMap;

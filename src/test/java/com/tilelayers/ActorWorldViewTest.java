@@ -1,10 +1,10 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.lang.reflect.Proxy;
 import net.runelite.api.*;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
-import static io.leikvolle.tileindicators.ActorOverlayMaskTest.*;
+import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
 
 public class ActorWorldViewTest

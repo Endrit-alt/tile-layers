@@ -1,4 +1,4 @@
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.Random;
 import net.runelite.api.MainBufferProvider;
 import org.junit.Test;
-import static io.leikvolle.tileindicators.ActorOverlayMaskTest.*;
+import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
 
 public class TriangleMaskRasterizerTest

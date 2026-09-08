@@ -23,7 +23,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package io.leikvolle.tileindicators;
+package com.tilelayers;
 
 import com.google.inject.Provides;
 import javax.inject.Inject;
@@ -56,15 +56,15 @@ import java.util.*;
 		tags = {"overlay", "tile", "indicators"}
 )
 @Slf4j
-public class ImprovedTileIndicatorsPlugin extends Plugin
+public class TileLayersPlugin extends Plugin
 {
 	@Inject
 	private OverlayManager overlayManager;
 
 	@Inject
-	private ImprovedTileIndicatorsOverlay overlay;
+	private TileLayersOverlay overlay;
 
-	@Inject ImprovedTileIndicatorsConfig config;
+	@Inject TileLayersConfig config;
 
 	@Inject
 	private Client client;
@@ -87,9 +87,9 @@ public class ImprovedTileIndicatorsPlugin extends Plugin
 	private static final String UNTAG_ALL = "Un-tag-All";
 
 	@Provides
-	ImprovedTileIndicatorsConfig provideConfig(ConfigManager configManager)
+	TileLayersConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(ImprovedTileIndicatorsConfig.class);
+		return configManager.getConfig(TileLayersConfig.class);
 	}
 
 	@Override
