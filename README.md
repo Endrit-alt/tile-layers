@@ -1,4 +1,4 @@
-# Best Tile Indicators
+# Tile Layers
 Draw overlays beneath players and NPCs, with adjustable opacity and a crowd cutoff.
 
 Maintained by **Endrit**, based on [Improved Tile Indicators by LeikvollE](https://github.com/LeikvollE/tileindicators).
@@ -27,7 +27,7 @@ The renderer skips all masking when the overlay is empty or opacity is 100%. Pad
 
 Nearby characters share conservative bounds checks within each frame, and stacked characters reuse identical pixel searches. Busy frames build an overlay index for constant-time overlap queries; light frames keep the simpler search. These caches refresh every frame so camera movement, moving markers, and changing character models take effect immediately. The same optimizations apply to players and NPCs.
 
-For named NPCs only, turn off **Draw overlays below all NPCs** and enable **Draw overlays below named NPCs**. This checkbox and the **NPC names** box sit directly below the three main checkboxes in **Overlay settings**. Enter comma-separated names, using `*` for wildcards, or shift-right-click NPCs and choose **Add NPC name** or **Remove NPC name**. A blank list affects no NPCs in named mode. If both NPC checkboxes are enabled, all NPCs receive the effect. Both modes use the shared population cutoff of 80, counting every loaded NPC even if its name does not match; there is no separate selected-NPC limit.
+For named NPCs only, turn off **Draw overlays below all NPCs** and enable **Draw overlays below named NPCs**. This checkbox and the **NPC names** box sit directly below the three main checkboxes. All settings appear directly in the plugin configuration, without a collapsible section. Enter comma-separated names, using `*` for wildcards, or shift-right-click NPCs and choose **Add NPC name** or **Remove NPC name**. A blank list affects no NPCs in named mode. If both NPC checkboxes are enabled, all NPCs receive the effect. Both modes use the shared population cutoff of 80, counting every loaded NPC even if its name does not match; there is no separate selected-NPC limit.
 
 ![](menu.png)
 ![](Hunllef.png)

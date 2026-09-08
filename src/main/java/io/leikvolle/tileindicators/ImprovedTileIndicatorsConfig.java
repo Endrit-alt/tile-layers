@@ -31,18 +31,10 @@ import net.runelite.client.config.*;
 public interface ImprovedTileIndicatorsConfig extends Config
 {
 
-	@ConfigSection(
-			name = "Overlay settings",
-			description = "Settings for drawing overlays around players and NPCs",
-			position = 0
-	)
-	String tileIndicatorsSection = "tileIndicatorsSection";
-
 	@ConfigItem(
 			keyName = "currentTileBelowPlayer",
 			name = "Draw overlays below player",
 			description = "Requires GPU. Draws overlays below the player",
-			section = tileIndicatorsSection,
 			position = 1
 	)
 	default boolean overlaysBelowPlayer()
@@ -54,7 +46,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "overlaysBelowAllNPCs",
 			name = "Draw overlays below all NPCs",
 			description = "Requires GPU. Draws overlays below all NPCs, regardless of the name list. Pauses when the loaded NPC count reaches the population cutoff.",
-			section = tileIndicatorsSection,
 			position = 3
 	)
 	default boolean overlaysBelowAllNPCs()
@@ -66,7 +57,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "overlaysBelowOtherPlayers",
 			name = "Draw overlays below other players",
 			description = "Requires GPU. Draws overlays below other players. Pauses when their count reaches the configured population cutoff. Your own player is controlled separately.",
-			section = tileIndicatorsSection,
 			position = 2
 	)
 	default boolean overlaysBelowOtherPlayers()
@@ -78,7 +68,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "overlaysBelowNPCs",
 			name = "Draw overlays below named NPCs",
 			description = "Requires GPU. Draws overlays below NPCs matching the names below. Works with Draw overlays below all NPCs turned off and uses the same population cutoff. A blank name list affects no NPCs.",
-			section = tileIndicatorsSection,
 			position = 4
 	)
 	default boolean overlaysBelowNPCs()
@@ -90,7 +79,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "topNPCs",
 			name = "NPC names",
 			description = "Comma-separated names for Draw overlays below named NPCs; * wildcards are supported. Blank affects no NPCs in named mode. Shift-right-click an NPC to add or remove its name. The all-NPC checkbox ignores this list.",
-			section = tileIndicatorsSection,
 			position = 5
 	)
 	default String getTopNPCs()
@@ -105,7 +93,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "npcOverlayOpacity",
 			name = "Overlay opacity",
 			description = "How much of an overlay remains visible over characters enabled above: 0% hides it, 100% keeps its original opacity. Applies to your player, other players, and all or selected NPCs.",
-			section = tileIndicatorsSection,
 			position = 6
 	)
 	default int overlayOpacity()
@@ -118,7 +105,6 @@ public interface ImprovedTileIndicatorsConfig extends Config
 			keyName = "crowdLimit",
 			name = "Crowd cutoff",
 			description = "Shared cutoff for other players and NPCs, counted separately. Each category pauses at this count or higher and resumes below it, including NPCs selected by name. Your own player is unaffected. 0 disables both crowd effects.",
-			section = tileIndicatorsSection,
 			position = 7
 	)
 	default int crowdLimit()

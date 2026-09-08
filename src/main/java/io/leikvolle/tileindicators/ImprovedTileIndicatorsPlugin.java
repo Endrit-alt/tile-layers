@@ -51,7 +51,7 @@ import net.runelite.client.util.WildcardMatcher;
 import java.util.*;
 
 @PluginDescriptor(
-		name = "Best Tile Indicators",
+		name = "Tile Layers",
 		description = "Draw overlays beneath players and NPCs, with adjustable opacity and a crowd cutoff.",
 		tags = {"overlay", "tile", "indicators"}
 )
