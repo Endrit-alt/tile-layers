@@ -45,7 +45,7 @@ public class OtherPlayerOverlayTest
     }
 
     @Test
-    public void crowdThresholdsPauseIndependentlyAndResumeBelowTheLimit() throws Exception
+    public void combinedCrowdCutoffPausesBothCategoriesAndResumesBelowTheLimit() throws Exception
     {
         Fixture f = new Fixture(513, 385, 80, 0);
         Map<String, Object> worldData = worldValues(true);
@@ -71,10 +71,10 @@ public class OtherPlayerOverlayTest
         TileLayersOverlay overlay = constructor.newInstance(client, stub(TileLayersConfig.class, settings));
         RenderedActors rendered = attachRenderedActors(overlay);
         Graphics2D graphics = f.image.createGraphics();
-        int[][] cases = {{79, 79, 80}, {80, 79, 80}, {79, 80, 80}, {80, 80, 80}, {81, 1, 80}, {1, 81, 80},
-                {49, 49, 50}, {50, 49, 50}, {49, 50, 50}, {50, 50, 50},
-                {51, 1, 50}, {1, 51, 50}, {1000, 1000, 50}, {49, 49, 50},
-                {1, 1, 0}, {0, 0, 0}, {9, 10, 10}, {10, 9, 10}};
+        int[][] cases = {{39, 40, 80}, {40, 40, 80}, {41, 40, 80}, {79, 79, 80}, {39, 40, 80},
+                {79, 0, 80}, {0, 79, 80}, {80, 0, 80}, {0, 80, 80}, {81, 1, 80}, {1, 81, 80},
+                {24, 25, 50}, {25, 25, 50}, {26, 25, 50}, {49, 49, 50}, {1000, 1000, 50}, {24, 25, 50},
+                {1, 1, 0}, {0, 0, 0}, {4, 5, 10}, {5, 5, 10}};
         for (boolean self : new boolean[]{false, true})
         {
             settings.put("overlaysBelowPlayer", self);
@@ -92,14 +92,16 @@ public class OtherPlayerOverlayTest
                 overlay.render(graphics);
                 for (int i = 0; i < 1000; i++)
                 {
-                    int expectedPlayer = playerCount < scenario[2] && i < playerCount ? 1 : 0;
-                    int expectedNpc = npcCount < scenario[2] && i < npcCount ? 1 : 0;
+                    boolean crowdAllowed = playerCount + npcCount < scenario[2];
+                    int expectedPlayer = crowdAllowed && i < playerCount ? 1 : 0;
+                    int expectedNpc = crowdAllowed && i < npcCount ? 1 : 0;
                     assertEquals("Player model work at crowd " + playerCount, expectedPlayer, models[i * 2 + 1]);
                     assertEquals("Player height work at crowd " + playerCount, expectedPlayer, heights[i * 2 + 1]);
                     assertEquals("NPC model work at crowd " + npcCount, expectedNpc, models[i * 2]);
                     assertEquals("NPC height work at crowd " + npcCount, expectedNpc, heights[i * 2]);
                 }
-                assertEquals("Crowd thresholds do not affect the self checkbox", self ? 1 : 0, models[2000]);
+                assertEquals("The combined cutoff does not affect the self checkbox", self ? 1 : 0, models[2000]);
+                assertEquals("The combined cutoff does not affect self height work", self ? 1 : 0, heights[2000]);
             }
         }
 
@@ -112,8 +114,8 @@ public class OtherPlayerOverlayTest
         settings.put("overlaysBelowPlayer", false);
         settings.put("crowdLimit", 80);
         worldData.put("players", indexed(local, players[0], players[1], players[2]));
-        Object[][] nameCases = {{"", 0}, {" , , ", 0}, {"Gemstone crab", 40},
-                {"Gemstone crab, Rat", 79}, {" gemSTONE* , ", 40}, {"Rat", 39}, {"Unlisted NPC", 0}};
+        Object[][] nameCases = {{"", 0}, {" , , ", 0}, {"Gemstone crab", 38},
+                {"Gemstone crab, Rat", 76}, {" gemSTONE* , ", 38}, {"Rat", 38}, {"Unlisted NPC", 0}};
         for (Object[] nameCase : nameCases)
         {
             String names = (String) nameCase[0];
@@ -123,7 +125,7 @@ public class OtherPlayerOverlayTest
                 boolean allNpcs = (mode & 1) != 0, namedNpcs = (mode & 2) != 0;
                 settings.put("overlaysBelowAllNPCs", allNpcs);
                 settings.put("overlaysBelowNPCs", namedNpcs);
-                for (int npcCount : new int[]{79, 80, 79})
+                for (int npcCount : new int[]{76, 77, 76})
                 {
                     worldData.put("npcs", indexed(Arrays.copyOf(npcs, npcCount)));
                     plugin.rebuild();
@@ -136,11 +138,12 @@ public class OtherPlayerOverlayTest
                     {
                         npcModels += models[i * 2]; npcHeights += heights[i * 2]; playerModels += models[i * 2 + 1];
                     }
-                    int expected = npcCount >= 80 ? 0 : allNpcs ? npcCount : namedNpcs ? (int) nameCase[1] : 0;
+                    boolean crowdAllowed = npcCount + 3 < 80;
+                    int expected = !crowdAllowed ? 0 : allNpcs ? npcCount : namedNpcs ? (int) nameCase[1] : 0;
                     String scenario = "NPC count=" + npcCount + ", all=" + allNpcs + ", named=" + namedNpcs + ", names=" + names;
                     assertEquals(scenario, expected, npcModels);
                     assertEquals(scenario, expected, npcHeights);
-                    assertEquals("NPC cutoff does not pause players", 3, playerModels);
+                    assertEquals("All loaded NPCs contribute to the combined player cutoff", crowdAllowed ? 3 : 0, playerModels);
                 }
             }
         }

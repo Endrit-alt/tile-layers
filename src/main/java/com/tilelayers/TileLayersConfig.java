@@ -58,7 +58,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowAllNPCs",
 			name = "Draw overlays below all NPCs",
-			description = "Requires GPU. Draws overlays below all NPCs, regardless of the name list. Pauses when the loaded NPC count reaches the population cutoff.",
+			description = "Requires GPU. Draws overlays below all NPCs, regardless of the name list. Pauses when the combined count of other players and NPCs reaches the crowd cutoff.",
 			position = 3
 	)
 	default boolean overlaysBelowAllNPCs()
@@ -69,7 +69,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowOtherPlayers",
 			name = "Draw overlays below other players",
-			description = "Requires GPU. Draws overlays below other players. Pauses when their count reaches the configured population cutoff. Your own player is controlled separately.",
+			description = "Requires GPU. Draws overlays below other players. Pauses when the combined count of other players and NPCs reaches the crowd cutoff. Your own player is controlled separately.",
 			position = 2
 	)
 	default boolean overlaysBelowOtherPlayers()
@@ -80,7 +80,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowNPCs",
 			name = "Draw overlays below named NPCs",
-			description = "Requires GPU. Draws overlays below NPCs matching the names below. Works with Draw overlays below all NPCs turned off and uses the same population cutoff. A blank name list affects no NPCs.",
+			description = "Requires GPU. Draws overlays below NPCs matching the names below. Works with Draw overlays below all NPCs turned off and uses the combined crowd cutoff. A blank name list affects no NPCs.",
 			position = 4
 	)
 	default boolean overlaysBelowNPCs()
@@ -103,7 +103,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "crowdLimit",
 			name = "Crowd cutoff",
-			description = "Shared cutoff for other players and NPCs, counted separately. Each category pauses at this count or higher and resumes below it, including NPCs selected by name. Your own player is unaffected. 0 disables both crowd effects.",
+			description = "Counts all loaded other players and NPCs together. Both crowd effects pause at this total or higher and resume below it, including NPCs selected by name. Your own player is excluded and unaffected. 0 disables both crowd effects.",
 			position = 7
 	)
 	default int crowdLimit()

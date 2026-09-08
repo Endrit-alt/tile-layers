@@ -87,12 +87,10 @@ public class TileLayersOverlay extends Overlay {
             boolean belowNpcs = belowAllNpcs || belowNamedNpcs;
             if (!belowPlayer && !belowOtherPlayers && !belowNpcs) return null;
             int crowdLimit = config.crowdLimit();
-            crowdActors.collect(client.getTopLevelWorldView(), player,
-                    belowOtherPlayers ? crowdLimit : 0,
-                    belowNpcs ? crowdLimit : 0);
+            crowdActors.collect(client.getTopLevelWorldView(), player, crowdLimit, belowOtherPlayers, belowNpcs);
             try
             {
-                if (!belowPlayer && !crowdActors.playersAllowed() && !crowdActors.npcsAllowed()) return null;
+                if (!belowPlayer && !crowdActors.allowed()) return null;
                 actorMask.beginFrame(graphics);
                 if (!actorMask.hasOverlay()) return null;
                 // One union mask for every enabled actor category: overlapping
