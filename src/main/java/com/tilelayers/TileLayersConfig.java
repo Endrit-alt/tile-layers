@@ -30,6 +30,19 @@ import net.runelite.client.config.*;
 @ConfigGroup("improvedtileindicators")
 public interface TileLayersConfig extends Config
 {
+	@Range(min = 0, max = 100)
+	@Units(Units.PERCENT)
+	// Keep the stored key so existing opacity preferences carry over.
+	@ConfigItem(
+			keyName = "npcOverlayOpacity",
+			name = "Overlay opacity",
+			description = "How much of an overlay remains visible over characters enabled below: 0% hides it, 100% keeps its original opacity. Applies to your player, other players, and all or selected NPCs.",
+			position = 0
+	)
+	default int overlayOpacity()
+	{
+		return 0;
+	}
 
 	@ConfigItem(
 			keyName = "currentTileBelowPlayer",
@@ -84,20 +97,6 @@ public interface TileLayersConfig extends Config
 	default String getTopNPCs()
 	{
 		return "";
-	}
-
-	@Range(min = 0, max = 100)
-	@Units(Units.PERCENT)
-	// Keep the stored key so existing opacity preferences carry over.
-	@ConfigItem(
-			keyName = "npcOverlayOpacity",
-			name = "Overlay opacity",
-			description = "How much of an overlay remains visible over characters enabled above: 0% hides it, 100% keeps its original opacity. Applies to your player, other players, and all or selected NPCs.",
-			position = 6
-	)
-	default int overlayOpacity()
-	{
-		return 0;
 	}
 
 	@Range(min = 0, max = 500)
