@@ -97,7 +97,7 @@ public interface TileLayersConfig extends Config
 	)
 	default int overlayOpacity()
 	{
-		return 10;
+		return 0;
 	}
 
 	@Range(min = 0, max = 500)
