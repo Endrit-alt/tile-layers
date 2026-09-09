@@ -1,15 +1,24 @@
 package com.tilelayers;
 
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Map;
 import net.runelite.api.*;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.client.ui.overlay.Overlay;
+import net.runelite.client.ui.overlay.OverlayLayer;
+import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.OverlayPosition;
 import org.junit.Test;
 import static com.tilelayers.ActorOverlayMaskTest.*;
 import static org.junit.Assert.*;
@@ -42,6 +51,90 @@ public class OtherPlayerOverlayTest
     {
         for (int opacity : new int[]{0, 25, 50, 75, 100})
             verify(true, true, true, true, opacity, true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void groundTextIsMaskedAfterDrawingRegardlessOfPluginLoadOrder() throws Exception
+    {
+        Fixture f = new Fixture(513, 385, 80, 0);
+        Map<String, Object> worldData = worldValues(true);
+        WorldView world = stub(WorldView.class, worldData);
+        Player local = player(f, world, 1000, 0);
+        worldData.put("players", indexed(local));
+        worldData.put("npcs", indexed());
+        Client client = stub(Client.class, values("isGpu", true, "getTopLevelWorldView", world,
+                "getWorldView", world, "getLocalPlayer", local, "getViewportWidth", 513, "getViewportHeight", 385,
+                "getScale", 512, "getCameraFpX", 1000f, "getCameraFpZ", -100f,
+                "getBufferProvider", TriangleMaskRasterizerTest.buffer(f.image)));
+        Map<String, Object> settings = values("overlaysBelowPlayer", true, "crowdLimit", 80);
+        Constructor<TileLayersOverlay> constructor = TileLayersOverlay.class
+                .getDeclaredConstructor(Client.class, TileLayersConfig.class);
+        constructor.setAccessible(true);
+        TileLayersOverlay mask = constructor.newInstance(client, stub(TileLayersConfig.class, settings));
+        recordFrame(attachRenderedActors(mask), local, world);
+        // Use RuneLite's real ordering rather than reproducing its comparator.
+        Field comparatorField = OverlayManager.class.getDeclaredField("OVERLAY_COMPARATOR");
+        comparatorField.setAccessible(true);
+        Comparator<Overlay> comparator = (Comparator<Overlay>) comparatorField.get(null);
+        assertEquals("The mask stays in the scene layer, before UI overlays", OverlayLayer.ABOVE_SCENE, mask.getLayer());
+        // Ground Items uses DEFAULT; Loot Filters uses HIGH.
+        for (float priority : new float[]{Overlay.PRIORITY_DEFAULT, Overlay.PRIORITY_HIGH, Overlay.PRIORITY_HIGHEST})
+        for (boolean boxed : new boolean[]{false, true})
+        {
+            Overlay groundText = new Overlay()
+            {
+                @Override
+                public Dimension render(Graphics2D graphics)
+                {
+                    if (boxed)
+                    {
+                        graphics.setColor(new Color(20, 30, 40, 180));
+                        graphics.fillRoundRect(184, 164, 144, 50, 6, 6);
+                    }
+                    graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    graphics.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+                    graphics.setColor(Color.WHITE);
+                    graphics.drawString("Dragon bones", 205, 184);
+                    graphics.drawString("Coins (10,000)", 205, 203);
+                    return null;
+                }
+            };
+            groundText.setPosition(OverlayPosition.DYNAMIC);
+            groundText.setLayer(OverlayLayer.ABOVE_SCENE);
+            groundText.setPriority(priority);
+            for (int opacity : new int[]{0, 50, 100})
+            for (boolean maskLoadedFirst : new boolean[]{false, true})
+            {
+                settings.put("overlayOpacity", opacity);
+                Arrays.fill(pixels(f.image), 0);
+                BufferedImage expected = new BufferedImage(513, 385, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D reference = expected.createGraphics();
+                groundText.render(reference);
+                int[] original = pixels(expected).clone();
+                referenceMask(f, reference, local);
+                reference.dispose();
+                assertFalse("Test text must intersect the character silhouette", Arrays.equals(original, pixels(expected)));
+                for (int i = 0; i < original.length; i++)
+                {
+                    if (pixels(expected)[i] == 0 && original[i] != 0 && opacity > 0)
+                    {
+                        int alpha = ((original[i] >>> 24) * opacity + 50) / 100;
+                        pixels(expected)[i] = (original[i] & 0xffffff) | (alpha << 24);
+                    }
+                }
+                Overlay[] overlays = maskLoadedFirst ? new Overlay[]{mask, groundText} : new Overlay[]{groundText, mask};
+                Arrays.sort(overlays, comparator);
+                for (Overlay overlay : overlays)
+                {
+                    Graphics2D graphics = f.image.createGraphics();
+                    overlay.render(graphics);
+                    graphics.dispose();
+                }
+                assertArrayEquals("Ground text priority=" + priority + ", opacity=" + opacity
+                        + ", boxed=" + boxed + ", mask loaded first=" + maskLoadedFirst, pixels(expected), pixels(f.image));
+            }
+        }
     }
 
     @Test
