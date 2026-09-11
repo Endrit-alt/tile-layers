@@ -33,6 +33,7 @@ import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -48,6 +49,9 @@ public class TileLayersOverlay extends Overlay {
 
     @Inject
     private RenderedActors renderedActors;
+
+    @Inject
+    private RenderCallbackManager renderCallbackManager;
 
     @Inject
     private TileLayersOverlay(Client client, TileLayersConfig config)
@@ -117,7 +121,7 @@ public class TileLayersOverlay extends Overlay {
 
     private void maskActor(Actor actor)
     {
-        if (!renderedActors.contains(actor)) return;
+        if (!renderedActors.isVisible(actor, renderCallbackManager)) return;
         final int localZ = ActorHeight.get(client, actor);
         if (localZ != ActorHeight.UNAVAILABLE) actorMask.addActor(actor, localZ);
     }
