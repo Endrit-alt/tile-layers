@@ -41,6 +41,7 @@ import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.PluginChanged;
+import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.eventbus.Subscribe;
@@ -52,7 +53,7 @@ import java.util.*;
 
 @PluginDescriptor(
 		name = "Tile Layers",
-		description = "Draw overlays beneath players and NPCs, with adjustable opacity and a crowd cutoff.",
+		description = "Draw overlays beneath players and NPCs, with adjustable opacity and a nearest-character limit.",
 		tags = {"overlay", "tile", "indicators"}
 )
 @Slf4j
@@ -79,8 +80,16 @@ public class TileLayersPlugin extends Plugin
 	private RenderedActors renderedActors;
 
 	@Getter(AccessLevel.PACKAGE)
-	private final Set<NPC> onTopNpcs = new HashSet<>();
+	private final Set<NPC> onTopNpcs = Collections.newSetFromMap(new IdentityHashMap<>());
 	private List<String> onTopNPCNames = new ArrayList<>();
+
+	@Getter(AccessLevel.PACKAGE)
+	private final NearestActors nearestActors = new NearestActors();
+
+	@Getter(AccessLevel.PACKAGE)
+	private final ActorMaskAdmission actorMaskAdmission = new ActorMaskAdmission();
+	private final LootOverlayOrder lootOverlayOrder = new LootOverlayOrder();
+	private volatile boolean started;
 
 	private static final String ADD_NPC_NAME = "Add NPC name";
 	private static final String REMOVE_NPC_NAME = "Remove NPC name";
@@ -89,41 +98,129 @@ public class TileLayersPlugin extends Plugin
 	@Provides
 	TileLayersConfig provideConfig(ConfigManager configManager)
 	{
+		migrateCharacterLimit(configManager);
 		return configManager.getConfig(TileLayersConfig.class);
 	}
 
 	@Override
 	protected void startUp()
 	{
-		renderedActors.beginFrame(null);
+		started = true;
+		resetActors();
 		renderCallbackManager.register(renderedActors);
 		overlayManager.add(overlay);
-		clientThread.invoke(this::rebuild);
+		clientThread.invoke(() -> {
+			if (!started) return;
+			updateLootOverlayOrder();
+			rebuild();
+		});
 	}
 
 	@Override
 	protected void shutDown()
 	{
-		overlayManager.remove(overlay);
+		synchronized (overlayManager)
+		{
+			started = false;
+			lootOverlayOrder.restore();
+			// Removing our overlay also rebuilds the restored draw order.
+			overlayManager.remove(overlay);
+		}
 		renderCallbackManager.unregister(renderedActors);
-		renderedActors.beginFrame(null);
+		resetActors();
+		onTopNpcs.clear();
+		// Dispose graphics resources on the thread that paints the masks.
+		clientThread.invoke(overlay::release);
+	}
+
+	private void updateLootOverlayOrder()
+	{
+		synchronized (overlayManager)
+		{
+			if (!started || !lootOverlayOrder.update(overlayManager, config.keepLootAboveCharacters())) return;
+			// Priority setters do not re-sort RuneLite's overlay lists. Re-add
+			// only our overlay to rebuild them without touching item settings.
+			overlayManager.remove(overlay);
+			overlayManager.add(overlay);
+		}
+	}
+
+	@Subscribe
+	public void onPluginChanged(PluginChanged event)
+	{
+		clientThread.invoke(this::updateLootOverlayOrder);
+	}
+
+	@Subscribe
+	public void onProfileChanged(ProfileChanged event)
+	{
+		clientThread.invoke(this::updateLootOverlayOrder);
 	}
 
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
-		renderedActors.beginFrame(client.getLocalPlayer());
+		boolean enabled = client.isGpu() && config.overlayOpacity() < 100;
+		Player local = client.getLocalPlayer();
+		boolean otherPlayers = enabled && config.overlaysBelowOtherPlayers();
+		boolean allNpcs = enabled && config.overlaysBelowAllNPCs();
+		boolean namedNpcs = enabled && config.overlaysBelowNPCs() && !onTopNpcs.isEmpty();
+		if (otherPlayers || allNpcs || namedNpcs)
+		{
+			nearestActors.select(local, namedNpcs ? onTopNpcs : Collections.emptySet(),
+					otherPlayers || allNpcs ? client.getTopLevelWorldView() : null,
+					otherPlayers, allNpcs, config.characterLimit());
+		}
+		else nearestActors.clear();
+		actorMaskAdmission.beginFrame(nearestActors);
+		renderedActors.beginFrame(enabled && config.overlaysBelowPlayer() ? local : null, nearestActors.selected());
+	}
+
+	private void resetActors()
+	{
+		nearestActors.clear();
+		actorMaskAdmission.clear();
+		renderedActors.beginFrame(null, Collections.emptySet());
+	}
+
+	private static void migrateCharacterLimit(ConfigManager configManager)
+	{
+		// The old threshold has a different meaning. Preserve an explicit disabled
+		// setting, but use the new default instead of treating 80 as a nearest cap.
+		// Do this when providing the config, before RuneLite writes new defaults.
+		if (configManager.getConfiguration("improvedtileindicators", "characterLimit") == null
+				&& "0".equals(configManager.getConfiguration("improvedtileindicators", "crowdLimit")))
+		{
+			configManager.setConfiguration("improvedtileindicators", "characterLimit", 0);
+		}
 	}
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
+		if (event.getGameState() != GameState.LOGGED_IN) resetActors();
 		if (event.getGameState() == GameState.LOGIN_SCREEN ||
 				event.getGameState() == GameState.HOPPING)
 		{
 			onTopNpcs.clear();
-			renderedActors.beginFrame(null);
 		}
+		else if (event.getGameState() == GameState.LOGGED_IN) rebuild();
+	}
+
+	@Subscribe
+	public void onWorldViewLoaded(WorldViewLoaded event)
+	{
+		clientThread.invoke(this::rebuild);
+	}
+
+	@Subscribe
+	public void onWorldViewUnloaded(WorldViewUnloaded event)
+	{
+		WorldView world = event.getWorldView();
+		clientThread.invoke(() -> {
+			resetActors();
+			onTopNpcs.removeIf(npc -> npc.getWorldView() == null || npc.getWorldView() == world);
+		});
 	}
 
 	@Subscribe
@@ -134,7 +231,11 @@ public class TileLayersPlugin extends Plugin
 			return;
 		}
 
-		clientThread.invoke(this::rebuild);
+		clientThread.invoke(() -> {
+			if (!started) return;
+			updateLootOverlayOrder();
+			rebuild();
+		});
 	}
 
 	@Subscribe
@@ -264,6 +365,7 @@ public class TileLayersPlugin extends Plugin
 		if (world == null) return;
 		for (NPC npc : world.npcs())
 		{
+			if (npc == null) continue;
 			final String npcName = npc.getName();
 
 			if (npcName == null)

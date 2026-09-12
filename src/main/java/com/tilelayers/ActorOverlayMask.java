@@ -43,19 +43,30 @@ final class ActorOverlayMask
     private final ActorProjection projection = new ActorProjection();
     private final ActorBoundsIndex boundsIndex = new ActorBoundsIndex(projection, coverage);
     private final TriangleMaskRasterizer rasterizer = new TriangleMaskRasterizer();
+    private final GroundItemOcclusion itemOcclusion;
+    private Graphics2D passGraphics;
+    private boolean passStarted;
+    private int passOpacity;
     private final float[] boundsX = new float[8];
     private final float[] boundsY = new float[8];
     private final float[] boundsZ = new float[8];
     private final int[] clippedX = new int[4];
     private final int[] clippedY = new int[4];
+    private final float[] clippedDepth = new float[4];
     private final int[] face = new int[3];
 
     ActorOverlayMask(Client client)
     {
         this.client = client;
+        this.itemOcclusion = new GroundItemOcclusion(client);
     }
 
     void beginFrame(Graphics2D graphics)
+    {
+        beginFrame(graphics, null, null);
+    }
+
+    void beginFrame(Graphics2D graphics, RenderedActors rendered, net.runelite.client.callback.RenderCallbackManager callbacks)
     {
         // ABOVE_SCENE overlays draw into this buffer in canvas coordinates.
         // Fall back to normal masking if a caller supplies transformed graphics.
@@ -64,30 +75,69 @@ final class ActorOverlayMask
                 client.getViewportWidth(), client.getViewportHeight());
         projection.beginFrame(client);
         boundsIndex.beginFrame();
+        boolean normalCanvas = graphics.getTransform().isIdentity()
+                && (graphics.getClip() == null || graphics.getClip() instanceof java.awt.Rectangle);
+        itemOcclusion.beginFrame(normalCanvas ? rendered : null, callbacks, coverage);
     }
 
     void clear(Graphics2D graphics, Actor actor, int localZ)
     {
         beginPass(graphics, 0);
-        addActor(actor, localZ);
-        endPass(graphics);
+        try { addActor(actor, localZ); }
+        finally { endPass(graphics); }
     }
 
     void beginPass(Graphics2D graphics, int opacity)
     {
-        rasterizer.begin(graphics, client.getBufferProvider(),
-                client.getViewportXOffset() + client.getViewportWidth(),
-                client.getViewportYOffset() + client.getViewportHeight(), opacity);
+        passOpacity = Math.max(0, Math.min(100, opacity));
+        passGraphics = graphics;
+        passStarted = false;
+    }
+
+    private void startRasterizer()
+    {
+        // Prepare the mask only once a visible triangle may cover an overlay.
+        Graphics2D clipped = (Graphics2D) passGraphics.create();
+        try
+        {
+            clipped.clipRect(client.getViewportXOffset(), client.getViewportYOffset(),
+                    client.getViewportWidth(), client.getViewportHeight());
+            rasterizer.begin(clipped, client.getBufferProvider(),
+                    client.getViewportXOffset() + client.getViewportWidth(),
+                    client.getViewportYOffset() + client.getViewportHeight(), passOpacity);
+        }
+        finally { clipped.dispose(); }
+        passStarted = true;
     }
 
     void endPass(Graphics2D graphics)
     {
-        rasterizer.apply(graphics);
+        try { if (passStarted) rasterizer.apply(graphics); }
+        finally
+        {
+            passGraphics = null;
+            passStarted = false;
+        }
+    }
+
+    void release()
+    {
+        passGraphics = null;
+        passStarted = false;
+        rasterizer.release();
+        itemOcclusion.release();
+        boundsIndex.beginFrame();
+        coverage.beginFrame(null, 0, 0, 0, 0);
     }
 
     void addActor(Actor actor, int localZ)
     {
-        if (!hasOverlay()) return;
+        addActor(actor, localZ, null);
+    }
+
+    void addActor(Actor actor, int localZ, ActorMaskAdmission admission)
+    {
+        if (passOpacity == 100 || !hasOverlay()) return;
         LocalPoint location = actor.getLocalLocation();
         if (location == null)
         {
@@ -95,9 +145,12 @@ final class ActorOverlayMask
         }
         WorldView world = actor.getWorldView();
         if (world == null) return;
+        if (admission != null && !admission.canRequest(actor)) return;
         if (!idleActorBoundsOverlap(actor, world, location, localZ)) return;
+        itemOcclusion.prepare();
         Model model = actor.getModel();
         if (model == null) return;
+        if (admission != null) admission.modelAvailable(actor);
         int rotation = actor.getCurrentOrientation();
         if (!boundsOverlap(model, world, location, localZ, rotation))
         {
@@ -127,7 +180,8 @@ final class ActorOverlayMask
             if (projection.depth[a] >= ActorProjection.NEAR && projection.depth[b] >= ActorProjection.NEAR
                     && projection.depth[c] >= ActorProjection.NEAR)
             {
-                triangle(projection.x[a], projection.y[a], projection.x[b], projection.y[b], projection.x[c], projection.y[c]);
+                triangle(projection.x[a], projection.y[a], projection.depth[a], projection.x[b], projection.y[b], projection.depth[b],
+                        projection.x[c], projection.y[c], projection.depth[c]);
             }
             else
             {
@@ -168,13 +222,14 @@ final class ActorOverlayMask
         return projectedBoundsOverlap(world, location, localZ);
     }
 
-    private void triangle(int ax, int ay, int bx, int by, int cx, int cy)
+    private void triangle(int ax, int ay, float az, int bx, int by, float bz, int cx, int cy, float cz)
     {
         if (((long) bx - ax) * ((long) cy - ay) - ((long) by - ay) * ((long) cx - ax) >= 0) return;
         if (coverage.intersects(Math.min(ax, Math.min(bx, cx)), Math.min(ay, Math.min(by, cy)),
                 Math.max(ax, Math.max(bx, cx)), Math.max(ay, Math.max(by, cy))))
         {
-            rasterizer.triangle(ax, ay, bx, by, cx, cy);
+            if (!passStarted) startRasterizer();
+            rasterizer.triangle(ax, ay, az, bx, by, bz, cx, cy, cz, itemOcclusion);
         }
     }
 
@@ -196,18 +251,21 @@ final class ActorOverlayMask
                 float x = projection.cameraX[previous] + t * (projection.cameraX[current] - projection.cameraX[previous]);
                 float y = projection.cameraY[previous] + t * (projection.cameraY[current] - projection.cameraY[previous]);
                 clippedX[count] = projection.screenX(x, ActorProjection.NEAR);
-                clippedY[count++] = projection.screenY(y, ActorProjection.NEAR);
+                clippedY[count] = projection.screenY(y, ActorProjection.NEAR);
+                clippedDepth[count++] = ActorProjection.NEAR;
             }
             if (currentInside)
             {
                 clippedX[count] = projection.x[current];
-                clippedY[count++] = projection.y[current];
+                clippedY[count] = projection.y[current];
+                clippedDepth[count++] = currentZ;
             }
             previous = current;
         }
         for (int i = 1; i + 1 < count; i++)
         {
-            triangle(clippedX[0], clippedY[0], clippedX[i], clippedY[i], clippedX[i + 1], clippedY[i + 1]);
+            triangle(clippedX[0], clippedY[0], clippedDepth[0], clippedX[i], clippedY[i], clippedDepth[i],
+                    clippedX[i + 1], clippedY[i + 1], clippedDepth[i + 1]);
         }
     }
 

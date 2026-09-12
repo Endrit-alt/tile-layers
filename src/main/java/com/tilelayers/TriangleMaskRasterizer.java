@@ -26,6 +26,7 @@
 package com.tilelayers;
 
 import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
@@ -40,17 +41,22 @@ import java.util.Arrays;
 import net.runelite.api.BufferProvider;
 import net.runelite.api.MainBufferProvider;
 
-/** Builds an opaque union mask, then attenuates each covered overlay pixel once. */
+/** Clears fully hidden overlays directly; fractional opacity uses one union mask. */
 final class TriangleMaskRasterizer
 {
+    private static final BasicStroke MASK_STROKE = new BasicStroke();
     private BufferedImage mask;
     private Graphics2D maskGraphics;
+    private Graphics2D clearGraphics;
     private int[] maskPixels;
     private int[] targetPixels;
     private int[] dirtyLeft;
     private int[] dirtyRight;
     private int[] solidLeft;
     private int[] solidRight;
+    private int[] overlayLeft;
+    private int[] overlayRight;
+    private int[] nextOverlayRow;
     private int dirtyTop;
     private int dirtyBottom;
     private int width;
@@ -59,12 +65,19 @@ final class TriangleMaskRasterizer
     private boolean premultiplied;
     private boolean fastTriangles;
     private boolean active;
+    private boolean directClear;
+    private boolean maskDirty;
+    private boolean emptyRows;
+    private GroundItemOcclusion itemOcclusion;
+    private double depthX, depthY, depthBase;
     private Rectangle clip;
     private final Polygon polygon = new Polygon(new int[3], new int[3], 3);
 
     void begin(Graphics2D graphics, BufferProvider buffer, int fallbackWidth, int fallbackHeight, int opacity)
     {
         active = false;
+        directClear = false;
+        disposeClearGraphics();
         this.opacity = Math.max(0, Math.min(100, opacity));
         int newWidth = buffer == null ? fallbackWidth : buffer.getWidth();
         int newHeight = buffer == null ? fallbackHeight : buffer.getHeight();
@@ -73,18 +86,21 @@ final class TriangleMaskRasterizer
             targetPixels = null;
             return;
         }
-        if (mask == null || width != newWidth || height != newHeight)
+        if (dirtyLeft == null || width != newWidth || height != newHeight)
         {
             if (maskGraphics != null) maskGraphics.dispose();
+            mask = null;
+            maskPixels = null;
+            maskGraphics = null;
             width = newWidth;
             height = newHeight;
-            mask = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-            maskPixels = ((DataBufferInt) mask.getRaster().getDataBuffer()).getData();
-            maskGraphics = mask.createGraphics();
             dirtyLeft = new int[height];
             dirtyRight = new int[height];
             solidLeft = new int[height];
             solidRight = new int[height];
+            overlayLeft = new int[height];
+            overlayRight = new int[height];
+            nextOverlayRow = new int[height];
             Arrays.fill(dirtyLeft, width);
             Arrays.fill(solidLeft, width);
         }
@@ -92,7 +108,7 @@ final class TriangleMaskRasterizer
         {
             for (int y = dirtyTop; y < dirtyBottom; y++)
             {
-                if (dirtyLeft[y] < dirtyRight[y])
+                if (maskDirty && dirtyLeft[y] < dirtyRight[y])
                 {
                     Arrays.fill(maskPixels, y * width + dirtyLeft[y], y * width + dirtyRight[y], 0);
                 }
@@ -104,13 +120,19 @@ final class TriangleMaskRasterizer
         }
         dirtyTop = height;
         dirtyBottom = 0;
+        maskDirty = false;
+        emptyRows = false;
+        Arrays.fill(overlayLeft, -1);
         active = true;
-        maskGraphics.setTransform(graphics.getTransform());
-        maskGraphics.setClip(graphics.getClip());
-        maskGraphics.setRenderingHints(graphics.getRenderingHints());
-        maskGraphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_OFF);
-        maskGraphics.setComposite(AlphaComposite.Src);
-        maskGraphics.setColor(Color.WHITE);
+        if (this.opacity == 0)
+        {
+            // Full clearing is idempotent: fallback triangles can target the
+            // overlay directly, avoiding a costly second Java2D image pass.
+            clearGraphics = (Graphics2D) graphics.create();
+            clearGraphics.setStroke(MASK_STROKE);
+            clearGraphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_OFF);
+            clearGraphics.setComposite(AlphaComposite.Clear);
+        }
 
         Shape userClip = graphics.getClip();
         clip = userClip == null ? new Rectangle(0, 0, width, height)
@@ -152,13 +174,49 @@ final class TriangleMaskRasterizer
                 }
             }
         }
+        directClear = this.opacity == 0 && targetPixels != null;
+        if (!directClear)
+        {
+            if (mask == null)
+            {
+                mask = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+                maskPixels = ((DataBufferInt) mask.getRaster().getDataBuffer()).getData();
+                maskGraphics = mask.createGraphics();
+            }
+            maskGraphics.setTransform(graphics.getTransform());
+            maskGraphics.setClip(graphics.getClip());
+            maskGraphics.setRenderingHints(graphics.getRenderingHints());
+            // Keep fill rules consistent between the rasterizer and Java2D fallback.
+            maskGraphics.setStroke(MASK_STROKE);
+            maskGraphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_OFF);
+            maskGraphics.setComposite(AlphaComposite.Src);
+            maskGraphics.setColor(Color.WHITE);
+        }
+    }
+
+    void triangle(int ax, int ay, float az, int bx, int by, float bz, int cx, int cy, float cz,
+            GroundItemOcclusion occlusion)
+    {
+        if (fastTriangles && occlusion != null && occlusion.intersects(Math.min(ax, Math.min(bx, cx)),
+                Math.min(ay, Math.min(by, cy)), Math.max(ax, Math.max(bx, cx)), Math.max(ay, Math.max(by, cy))))
+        {
+            double area = (double) (bx - ax) * (cy - ay) - (double) (by - ay) * (cx - ax);
+            if (area == 0) return;
+            double qa = 1.0 / az, qb = 1.0 / bz, qc = 1.0 / cz;
+            depthX = ((qb - qa) * (cy - ay) - (qc - qa) * (by - ay)) / area;
+            depthY = ((bx - ax) * (qc - qa) - (cx - ax) * (qb - qa)) / area;
+            depthBase = qa - ax * depthX - ay * depthY;
+            itemOcclusion = occlusion;
+        }
+        try { triangle(ax, ay, bx, by, cx, cy); }
+        finally { itemOcclusion = null; }
     }
 
     void triangle(int ax, int ay, int bx, int by, int cx, int cy)
     {
         if (opacity == 100 || !active) return;
         // Keep Java2D's exact clipping and stroke normalization for edge cases.
-        if (!fastTriangles || !clip.contains(ax, ay) || !clip.contains(bx, by) || !clip.contains(cx, cy))
+        if (!fastTriangles || (itemOcclusion == null && (!clip.contains(ax, ay) || !clip.contains(bx, by) || !clip.contains(cx, cy))))
         {
             polygon.xpoints[0] = ax;
             polygon.xpoints[1] = bx;
@@ -167,7 +225,13 @@ final class TriangleMaskRasterizer
             polygon.ypoints[1] = by;
             polygon.ypoints[2] = cy;
             polygon.invalidate();
+            if (clearGraphics != null)
+            {
+                clearGraphics.fill(polygon);
+                return;
+            }
             maskGraphics.fill(polygon);
+            maskDirty = true;
             // Transforms and nonrectangular clips may spread the drawn bounds.
             Rectangle bounds = maskGraphics.getTransform().createTransformedShape(polygon).getBounds();
             markDirty(bounds.x, bounds.y, (long) bounds.x + bounds.width + 1, (long) bounds.y + bounds.height + 1);
@@ -177,6 +241,11 @@ final class TriangleMaskRasterizer
         if (by > cy) { int t = bx; bx = cx; cx = t; t = by; by = cy; cy = t; }
         if (ay > by) { int t = ax; ax = bx; bx = t; t = ay; ay = by; by = t; }
         if (ay == cy) return;
+        if (itemOcclusion != null && (!clip.contains(ax, ay) || !clip.contains(bx, by) || !clip.contains(cx, cy)))
+        {
+            clippedDepthTriangle(ax, ay, bx, by, cx, cy);
+            return;
+        }
 
         // Integer polygon fills sample integer scanlines. Ten fractional bits
         // preserve Java2D's edge stepping, including its rounding at thin edges.
@@ -188,6 +257,14 @@ final class TriangleMaskRasterizer
             long shortX = (long) ax << 10;
             for (int y = ay; y < by; y++, longX += longStep, shortX += shortStep)
             {
+                if (emptyRows)
+                {
+                    int next = nextOverlayRow(y, by);
+                    longX += (next - y) * longStep;
+                    shortX += (next - y) * shortStep;
+                    y = next;
+                    if (y == by) break;
+                }
                 span(y, longX, shortX);
             }
         }
@@ -197,8 +274,35 @@ final class TriangleMaskRasterizer
             long shortX = (long) bx << 10;
             for (int y = by; y < cy; y++, longX += longStep, shortX += shortStep)
             {
+                if (emptyRows)
+                {
+                    int next = nextOverlayRow(y, cy);
+                    longX += (next - y) * longStep;
+                    shortX += (next - y) * shortStep;
+                    y = next;
+                    if (y == cy) break;
+                }
                 span(y, longX, shortX);
             }
+        }
+    }
+
+    private void clippedDepthTriangle(int ax, int ay, int bx, int by, int cx, int cy)
+    {
+        long step = ((long) (cx - ax) << 10) / (cy - ay);
+        if (ay < by)
+        {
+            long shortStep = ((long) (bx - ax) << 10) / (by - ay);
+            int start = Math.max(ay, clip.y), end = Math.min(by, clip.y + clip.height);
+            long lx = ((long) ax << 10) + (start - ay) * step, sx = ((long) ax << 10) + (start - ay) * shortStep;
+            for (int y = start; y < end; y++, lx += step, sx += shortStep) span(y, lx, sx);
+        }
+        if (by < cy)
+        {
+            long shortStep = ((long) (cx - bx) << 10) / (cy - by);
+            int start = Math.max(by, clip.y), end = Math.min(cy, clip.y + clip.height);
+            long lx = ((long) ax << 10) + (start - ay) * step, sx = ((long) bx << 10) + (start - by) * shortStep;
+            for (int y = start; y < end; y++, lx += step, sx += shortStep) span(y, lx, sx);
         }
     }
 
@@ -206,19 +310,54 @@ final class TriangleMaskRasterizer
     {
         int left = (int) ((Math.min(x1, x2) + 1023) >> 10);
         int right = (int) ((Math.max(x1, x2) + 1023) >> 10);
+        if (itemOcclusion != null)
+        {
+            left = Math.max(left, clip.x);
+            right = Math.min(right, clip.x + clip.width);
+        }
         if (left >= right) return;
         if (left >= solidLeft[y] && right <= solidRight[y]) return;
+        if (targetPixels != null)
+        {
+            if (overlayLeft[y] < 0) findOverlayBounds(y);
+            left = Math.max(left, overlayLeft[y]);
+            right = Math.min(right, overlayRight[y]);
+            if (left >= right) return;
+        }
+        if (left >= solidLeft[y] && right <= solidRight[y]) return;
+        if (itemOcclusion != null && itemOcclusion.intersectsRow(y, left, right))
+        {
+            double q = depthBase + (left + 0.5) * depthX + (y + 0.5) * depthY;
+            int start = left;
+            for (int x = left; x < right; x++, q += depthX)
+            {
+                if (!itemOcclusion.occludes(x, y, q)) continue;
+                if (start < x) fillSpan(y, start, x);
+                start = x + 1;
+            }
+            if (start < right) fillSpan(y, start, right);
+            return;
+        }
+        fillSpan(y, left, right);
+    }
+
+    private void fillSpan(int y, int left, int right)
+    {
+        if (left >= solidLeft[y] && right <= solidRight[y]) return;
         int row = y * width;
+        int[] output = directClear ? targetPixels : maskPixels;
+        int value = directClear ? 0 : -1;
+        if (!directClear) maskDirty = true;
         if (left <= solidRight[y] && right >= solidLeft[y])
         {
-            if (left < solidLeft[y]) Arrays.fill(maskPixels, row + left, row + solidLeft[y], -1);
-            if (right > solidRight[y]) Arrays.fill(maskPixels, row + solidRight[y], row + right, -1);
+            if (left < solidLeft[y]) Arrays.fill(output, row + left, row + solidLeft[y], value);
+            if (right > solidRight[y]) Arrays.fill(output, row + solidRight[y], row + right, value);
             solidLeft[y] = Math.min(solidLeft[y], left);
             solidRight[y] = Math.max(solidRight[y], right);
         }
         else
         {
-            Arrays.fill(maskPixels, row + left, row + right, -1);
+            Arrays.fill(output, row + left, row + right, value);
             if (right - left > solidRight[y] - solidLeft[y])
             {
                 solidLeft[y] = left;
@@ -229,6 +368,46 @@ final class TriangleMaskRasterizer
         dirtyRight[y] = Math.max(dirtyRight[y], right);
         dirtyTop = Math.min(dirtyTop, y);
         dirtyBottom = Math.max(dirtyBottom, y + 1);
+    }
+
+    private void findOverlayBounds(int y)
+    {
+        // Scan a row only when a triangle reaches it. Empty rows and margins
+        // need no mask writes. Keep nonzero RGB even at zero alpha so clearing
+        // preserves the existing pixel result for straight-alpha buffers too.
+        int start = Math.max(0, clip.x);
+        int end = (int) Math.min(width, (long) clip.x + clip.width);
+        int row = y * width;
+        int[] pixels = targetPixels;
+        while (start + 7 < end && (pixels[row + start] | pixels[row + start + 1]
+                | pixels[row + start + 2] | pixels[row + start + 3] | pixels[row + start + 4]
+                | pixels[row + start + 5] | pixels[row + start + 6] | pixels[row + start + 7]) == 0) start += 8;
+        while (start < end && pixels[row + start] == 0) start++;
+        while (end - 8 >= start && (pixels[row + end - 1] | pixels[row + end - 2]
+                | pixels[row + end - 3] | pixels[row + end - 4] | pixels[row + end - 5]
+                | pixels[row + end - 6] | pixels[row + end - 7] | pixels[row + end - 8]) == 0) end -= 8;
+        while (end > start && pixels[row + end - 1] == 0) end--;
+        overlayLeft[y] = start;
+        overlayRight[y] = end;
+        nextOverlayRow[y] = y + 1;
+        if (start == end) emptyRows = true;
+        // Within this pass overlays can only lose pixels. Cached bounds may
+        // overestimate after a direct clear, but can never omit a later mask.
+    }
+
+    private int nextOverlayRow(int y, int end)
+    {
+        int first = y;
+        while (y < end)
+        {
+            if (overlayLeft[y] < 0) findOverlayBounds(y);
+            if (overlayLeft[y] < overlayRight[y]) break;
+            y = nextOverlayRow[y];
+        }
+        y = Math.min(y, end);
+        // Remember known-empty runs so subsequent triangles jump over them.
+        if (first < y) nextOverlayRow[first] = y;
+        return y;
     }
 
     private void markDirty(int x, int y, long right, long bottom)
@@ -247,9 +426,43 @@ final class TriangleMaskRasterizer
         dirtyBottom = Math.max(dirtyBottom, endY);
     }
 
+    void release()
+    {
+        itemOcclusion = null;
+        disposeClearGraphics();
+        if (maskGraphics != null) maskGraphics.dispose();
+        maskGraphics = null;
+        mask = null;
+        maskPixels = targetPixels = null;
+        dirtyLeft = dirtyRight = solidLeft = solidRight = null;
+        overlayLeft = overlayRight = null;
+        nextOverlayRow = null;
+        clip = null;
+        width = height = dirtyTop = dirtyBottom = 0;
+        active = false;
+        directClear = maskDirty = false;
+        emptyRows = false;
+    }
+
+    private void disposeClearGraphics()
+    {
+        if (clearGraphics != null) clearGraphics.dispose();
+        clearGraphics = null;
+    }
+
     void apply(Graphics2D graphics)
     {
-        if (opacity == 100 || dirtyTop >= dirtyBottom || !active) return;
+        try { applyMask(graphics); }
+        finally
+        {
+            disposeClearGraphics();
+            active = false;
+        }
+    }
+
+    private void applyMask(Graphics2D graphics)
+    {
+        if (opacity == 100 || directClear || dirtyTop >= dirtyBottom || !active) return;
         if (targetPixels != null)
         {
             for (int y = dirtyTop; y < dirtyBottom; y++)

@@ -58,7 +58,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowAllNPCs",
 			name = "Draw overlays below all NPCs",
-			description = "Requires GPU. Draws overlays below all NPCs, regardless of the name list. Pauses when the combined count of other players and NPCs reaches the crowd cutoff.",
+			description = "Requires GPU. Includes all nearby NPCs, sharing the Character limit with other players. Listed NPCs, your opponents, known bosses and other NPCs in combat take priority.",
 			position = 3
 	)
 	default boolean overlaysBelowAllNPCs()
@@ -69,7 +69,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowOtherPlayers",
 			name = "Draw overlays below other players",
-			description = "Requires GPU. Draws overlays below other players. Pauses when the combined count of other players and NPCs reaches the crowd cutoff. Your own player is controlled separately.",
+			description = "Requires GPU. Draws overlays below nearby other players, sharing the Character limit with NPCs. Your own player is controlled separately.",
 			position = 2
 	)
 	default boolean overlaysBelowOtherPlayers()
@@ -80,7 +80,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "overlaysBelowNPCs",
 			name = "Draw overlays below named NPCs",
-			description = "Requires GPU. Draws overlays below NPCs matching the names below. Works with Draw overlays below all NPCs turned off and uses the combined crowd cutoff. A blank name list affects no NPCs.",
+			description = "Requires GPU. Draws overlays below the named NPCs and gives them first priority within the shared Character limit, including when all NPCs are enabled. A blank name list affects no NPCs in named mode.",
 			position = 4
 	)
 	default boolean overlaysBelowNPCs()
@@ -91,7 +91,7 @@ public interface TileLayersConfig extends Config
 	@ConfigItem(
 			keyName = "topNPCs",
 			name = "NPC names",
-			description = "Comma-separated names for Draw overlays below named NPCs; * wildcards are supported. Blank affects no NPCs in named mode. Shift-right-click an NPC to add or remove its name. The all-NPC checkbox ignores this list.",
+			description = "Comma-separated NPC names given first priority when named NPCs are enabled; * wildcards are supported. Blank affects no NPCs in named mode. Shift-right-click an NPC to add or remove its name.",
 			position = 5
 	)
 	default String getTopNPCs()
@@ -99,16 +99,24 @@ public interface TileLayersConfig extends Config
 		return "";
 	}
 
-	@Range(min = 0, max = 500)
 	@ConfigItem(
-			keyName = "crowdLimit",
-			name = "Crowd cutoff",
-			description = "Counts all loaded other players and NPCs together. Both crowd effects pause at this total or higher and resume below it, including NPCs selected by name. Your own player is excluded and unaffected. 0 disables both crowd effects.",
+			keyName = "keepLootAboveCharacters",
+			name = "Loot above characters",
+			description = "Keep Ground Items and Loot Filters overlays above players and NPCs, including their labels, timers, icons and item tile highlights. Other overlays still follow the character settings.",
 			position = 7
 	)
-	default int crowdLimit()
+	default boolean keepLootAboveCharacters() { return false; }
+
+	@Range(min = 0, max = NearestActors.MAX_LIMIT)
+	@ConfigItem(
+			keyName = "characterLimit",
+			name = "Character limit",
+			description = "Maximum NPCs and other players affected together. Prioritizes listed NPCs, your opponents, known bosses, then other NPCs in combat; distance breaks ties. Your own character is separate. Set to 0 to disable both groups.",
+			position = 6
+	)
+	default int characterLimit()
 	{
-		return 80;
+		return 100;
 	}
 
 	@ConfigItem(

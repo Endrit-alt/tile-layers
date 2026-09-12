@@ -32,7 +32,6 @@ import javax.inject.Inject;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
-import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
@@ -42,7 +41,6 @@ public class TileLayersOverlay extends Overlay {
     private final Client client;
     private final TileLayersConfig config;
     private final ActorOverlayMask actorMask;
-    private final CrowdActors crowdActors = new CrowdActors();
 
     @Inject
     private TileLayersPlugin plugin;
@@ -63,26 +61,17 @@ public class TileLayersOverlay extends Overlay {
         setLayer(OverlayLayer.ABOVE_SCENE);
         // Mask after normal scene overlays, including Loot Filters' HIGH-priority
         // ground labels. Keep one pass before widgets and other UI are drawn.
-        setPriority(PRIORITY_HIGHEST + 1f);
+        setPriority(LootOverlayOrder.MASK_PRIORITY);
     }
 
     @Override
     public Dimension render(Graphics2D graphics)
     {
-
-        final Player player = client.getLocalPlayer();
-        if (player == null)
+        NearestActors nearest = plugin.getNearestActors();
+        try
         {
-            return null;
-        }
-        final LocalPoint playerPosLocal = player.getLocalLocation();
-        if (playerPosLocal == null)
-        {
-            return null;
-        }
-
-        if (client.isGpu())
-        {
+            final Player player = client.getLocalPlayer();
+            if (player == null || player.getLocalLocation() == null || !client.isGpu()) return null;
             int opacity = Math.max(0, Math.min(100, config.overlayOpacity()));
             if (opacity == 100) return null;
             boolean belowPlayer = config.overlaysBelowPlayer();
@@ -92,38 +81,47 @@ public class TileLayersOverlay extends Overlay {
                     && !plugin.getOnTopNpcs().isEmpty();
             boolean belowNpcs = belowAllNpcs || belowNamedNpcs;
             if (!belowPlayer && !belowOtherPlayers && !belowNpcs) return null;
-            int crowdLimit = config.crowdLimit();
-            crowdActors.collect(client.getTopLevelWorldView(), player, crowdLimit, belowOtherPlayers, belowNpcs);
+
+            actorMask.beginFrame(graphics, renderedActors, renderCallbackManager);
+            if (!actorMask.hasOverlay()) return null;
+            // One union mask for every enabled actor category: overlapping
+            // players and NPCs attenuate an overlay pixel only once.
+            actorMask.beginPass(graphics, opacity);
             try
             {
-                if (!belowPlayer && !crowdActors.allowed()) return null;
-                actorMask.beginFrame(graphics);
-                if (!actorMask.hasOverlay()) return null;
-                // One union mask for every enabled actor category: overlapping
-                // players and NPCs attenuate an overlay pixel only once.
-                actorMask.beginPass(graphics, opacity);
                 if (belowPlayer) maskActor(player);
-                for (int i = 0; i < crowdActors.playerCount(); i++) maskActor(crowdActors.player(i));
-                for (int i = 0; i < crowdActors.npcCount(); i++)
+                int limit = Math.min(nearest.size(), Math.max(0, config.characterLimit()));
+                for (int i = 0; i < limit; i++)
                 {
-                    Actor npc = crowdActors.npc(i);
-                    if (belowAllNpcs || plugin.getOnTopNpcs().contains(npc)) maskActor(npc);
+                    Actor actor = nearest.get(i);
+                    boolean enabled = actor instanceof Player ? belowOtherPlayers
+                            : belowAllNpcs || (belowNamedNpcs && plugin.getOnTopNpcs().contains(actor));
+                    if (enabled) maskActor(actor);
                 }
-                actorMask.endPass(graphics);
             }
             finally
             {
-                crowdActors.clear();
+                actorMask.endPass(graphics);
             }
         }
+        finally
+        {
+            nearest.clear();
+        }
         return null;
+    }
+
+    void release()
+    {
+        actorMask.release();
     }
 
     private void maskActor(Actor actor)
     {
         if (!renderedActors.isVisible(actor, renderCallbackManager)) return;
         final int localZ = ActorHeight.get(client, actor);
-        if (localZ != ActorHeight.UNAVAILABLE) actorMask.addActor(actor, localZ);
+        if (localZ != ActorHeight.UNAVAILABLE)
+            actorMask.addActor(actor, localZ, actor == client.getLocalPlayer() ? null : plugin.getActorMaskAdmission());
     }
 
 }

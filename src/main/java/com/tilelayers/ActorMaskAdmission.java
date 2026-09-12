@@ -25,44 +25,58 @@
  */
 package com.tilelayers;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import net.runelite.api.Actor;
-import net.runelite.api.Client;
-import net.runelite.api.NPC;
-import net.runelite.api.NPCComposition;
-import net.runelite.api.Perspective;
-import net.runelite.api.WorldView;
-import net.runelite.api.coords.LocalPoint;
 
-final class ActorHeight
+/** Introduces new masks gradually; admitted actors still use a fresh model every frame. */
+final class ActorMaskAdmission
 {
-    static final int UNAVAILABLE = Integer.MIN_VALUE;
+    private final Set<Actor> admitted = Collections.newSetFromMap(new IdentityHashMap<>());
+    private Actor pendingActor;
+    private int nextCandidate;
 
-    static int get(Client client, Actor actor)
+    void beginFrame(NearestActors nearest)
     {
-        WorldView world = actor.getWorldView();
-        LocalPoint location = actor.getLocalLocation();
-        if (world == null || location == null || client.getWorldView(location.getWorldView()) != world)
+        admitted.retainAll(nearest.selected());
+        pendingActor = null;
+        int count = nearest.size();
+        if (count == 0)
         {
-            return UNAVAILABLE;
+            nextCandidate = 0;
+            return;
         }
-        int x = location.getSceneX(), y = location.getSceneY();
-        if (x < 0 || y < 0 || x >= world.getSizeX() || y >= world.getSizeY()) return UNAVAILABLE;
-        byte[][][] settings = world.getTileSettings();
-        if (settings == null || settings.length < 2 || settings[1] == null || x >= settings[1].length
-                || settings[1][x] == null || y >= settings[1][x].length)
+        nextCandidate %= count;
+        // retainAll guarantees admitted is a subset of this selection.
+        if (admitted.size() == count) return;
+        // Rotate attempts so unavailable or hidden models cannot hold up the queue.
+        for (int visited = 0; visited < count; visited++)
         {
-            return UNAVAILABLE;
+            Actor actor = nearest.get(nextCandidate);
+            nextCandidate = (nextCandidate + 1) % count;
+            if (!admitted.contains(actor))
+            {
+                pendingActor = actor;
+                break;
+            }
         }
-        int footprint;
-        if (actor instanceof NPC)
-        {
-            NPCComposition composition = ((NPC) actor).getTransformedComposition();
-            if (composition == null) return UNAVAILABLE;
-            footprint = composition.getFootprintSize();
-        }
-        else footprint = actor.getFootprintSize();
-        return Perspective.getFootprintTileHeight(client, location, world.getPlane(), footprint) - actor.getAnimationHeightOffset();
     }
 
-    private ActorHeight() { }
+    boolean canRequest(Actor actor)
+    {
+        return actor != null && (actor == pendingActor || admitted.contains(actor));
+    }
+
+    void modelAvailable(Actor actor)
+    {
+        admitted.add(actor);
+    }
+
+    void clear()
+    {
+        admitted.clear();
+        pendingActor = null;
+        nextCandidate = 0;
+    }
 }
