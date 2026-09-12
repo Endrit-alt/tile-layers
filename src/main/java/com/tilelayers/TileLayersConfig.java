@@ -116,7 +116,7 @@ public interface TileLayersConfig extends Config
 	)
 	default int characterLimit()
 	{
-		return 100;
+		return 200;
 	}
 
 	@ConfigItem(
