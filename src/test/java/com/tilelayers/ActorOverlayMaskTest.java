@@ -60,7 +60,9 @@ public class ActorOverlayMaskTest
         f.mask.endPass(graphics);
         assertEquals(0, builds.get());
         // An actor reaching the marked area still gets its exact model mask.
+        f.mask.beginPass(graphics, 0);
         f.mask.addActor(idleActor(f, Player.class, 1000, builds, -1, -1), 0);
+        f.mask.endPass(graphics);
         assertEquals(1, builds.get());
         graphics.dispose();
     }

@@ -160,6 +160,7 @@ public class TileLayersPlugin extends Plugin
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
+		nearestActors.setExcludedNpcs(config.excludedBosses());
 		boolean enabled = client.isGpu() && config.overlayOpacity() < 100;
 		Player local = client.getLocalPlayer();
 		boolean otherPlayers = enabled && config.overlaysBelowOtherPlayers();

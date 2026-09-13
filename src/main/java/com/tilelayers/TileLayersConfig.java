@@ -103,7 +103,7 @@ public interface TileLayersConfig extends Config
 			keyName = "keepLootAboveCharacters",
 			name = "Loot above characters",
 			description = "Keep Ground Items and Loot Filters overlays above players and NPCs, including their labels, timers, icons and item tile highlights. Other overlays still follow the character settings.",
-			position = 7
+			position = 8
 	)
 	default boolean keepLootAboveCharacters() { return false; }
 
@@ -112,12 +112,20 @@ public interface TileLayersConfig extends Config
 			keyName = "characterLimit",
 			name = "Character limit",
 			description = "Maximum NPCs and other players affected together. Prioritizes listed NPCs, your opponents, known bosses, then other NPCs in combat; distance breaks ties. Your own character is separate. Set to 0 to disable both groups.",
-			position = 6
+			position = 7
 	)
 	default int characterLimit()
 	{
 		return 200;
 	}
+
+    @ConfigItem(
+            keyName = "excludedBosses",
+            name = "Excluded bosses",
+            description = "Comma-separated boss names to keep overlays visible over. Exclusions override all NPCs, named NPCs and combat priority. Names ignore case; * wildcards are supported. Blank excludes nothing.",
+            position = 6
+    )
+    default String excludedBosses() { return ""; }
 
 	@ConfigItem(
 			keyName = "topNPCs",

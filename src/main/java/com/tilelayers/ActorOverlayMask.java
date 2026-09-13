@@ -175,7 +175,8 @@ final class ActorOverlayMask
         int faceCount = model.getFaceCount();
         for (int i = 0; i < faceCount; i++)
         {
-            if (transparency != null && (transparency[i] & 255) >= 254) continue;
+            // Near-invisible NPC helper boxes use transparency 253.
+            if (transparency != null && (transparency[i] & 255) >= 253) continue;
             int a = faceA[i], b = faceB[i], c = faceC[i];
             if (projection.depth[a] >= ActorProjection.NEAR && projection.depth[b] >= ActorProjection.NEAR
                     && projection.depth[c] >= ActorProjection.NEAR)
