@@ -158,8 +158,9 @@ final class ActorOverlayMask
         }
 
         int vertexCount = model.getVerticesCount();
+        float[] verticesY = model.getVerticesY();
         if (!projection.project(world, location.getX(), location.getY(), localZ, rotation,
-                model.getVerticesX(), model.getVerticesY(), model.getVerticesZ(), vertexCount)) return;
+                model.getVerticesX(), verticesY, model.getVerticesZ(), vertexCount)) return;
 
         // Cylinder and block bounds deliberately overestimate coverage. Check
         // the actual projected extent against pixels before visiting thousands
@@ -176,8 +177,10 @@ final class ActorOverlayMask
         for (int i = 0; i < faceCount; i++)
         {
             // Near-invisible NPC helper boxes use transparency 253.
-            if (transparency != null && (transparency[i] & 255) >= 253) continue;
+            int faceTransparency = transparency == null ? 0 : transparency[i] & 255;
+            if (faceTransparency >= 253) continue;
             int a = faceA[i], b = faceB[i], c = faceC[i];
+            if (faceTransparency > 0 && isFlatGroundFace(verticesY[a], verticesY[b], verticesY[c])) continue;
             if (projection.depth[a] >= ActorProjection.NEAR && projection.depth[b] >= ActorProjection.NEAR
                     && projection.depth[c] >= ActorProjection.NEAR)
             {
@@ -194,6 +197,16 @@ final class ActorOverlayMask
     boolean hasOverlay()
     {
         return coverage.hasOverlay();
+    }
+
+    private static boolean isFlatGroundFace(float a, float b, float c)
+    {
+        // Translucent, nearly horizontal faces at the feet are ground shadows.
+        // Leave overlays visible over these decals without excluding solid feet
+        // or raised/sloped translucent parts of the actor.
+        float low = Math.min(a, Math.min(b, c));
+        float high = Math.max(a, Math.max(b, c));
+        return low >= -16f && high <= 16f && high - low <= 1f;
     }
 
     private boolean idleActorBoundsOverlap(Actor actor, WorldView world, LocalPoint location, int localZ)

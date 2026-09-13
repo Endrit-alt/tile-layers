@@ -88,7 +88,7 @@ public class TileLayersPlugin extends Plugin
 
 	@Getter(AccessLevel.PACKAGE)
 	private final ActorMaskAdmission actorMaskAdmission = new ActorMaskAdmission();
-	private final LootOverlayOrder lootOverlayOrder = new LootOverlayOrder();
+	private final OverlayMaskOrder overlayMaskOrder = new OverlayMaskOrder();
 	private volatile boolean started;
 
 	private static final String ADD_NPC_NAME = "Add NPC name";
@@ -111,7 +111,7 @@ public class TileLayersPlugin extends Plugin
 		overlayManager.add(overlay);
 		clientThread.invoke(() -> {
 			if (!started) return;
-			updateLootOverlayOrder();
+			updateOverlayOrder();
 			rebuild();
 		});
 	}
@@ -122,7 +122,7 @@ public class TileLayersPlugin extends Plugin
 		synchronized (overlayManager)
 		{
 			started = false;
-			lootOverlayOrder.restore();
+			overlayMaskOrder.restore();
 			// Removing our overlay also rebuilds the restored draw order.
 			overlayManager.remove(overlay);
 		}
@@ -133,13 +133,13 @@ public class TileLayersPlugin extends Plugin
 		clientThread.invoke(overlay::release);
 	}
 
-	private void updateLootOverlayOrder()
+	private void updateOverlayOrder()
 	{
 		synchronized (overlayManager)
 		{
-			if (!started || !lootOverlayOrder.update(overlayManager, config.keepLootAboveCharacters())) return;
+			if (!started || !overlayMaskOrder.update(overlayManager, config.keepLootAboveCharacters(), config.onlyTileAndMarkerPlugins())) return;
 			// Priority setters do not re-sort RuneLite's overlay lists. Re-add
-			// only our overlay to rebuild them without touching item settings.
+			// only our overlay to rebuild them without saving other plugin settings.
 			overlayManager.remove(overlay);
 			overlayManager.add(overlay);
 		}
@@ -148,18 +148,26 @@ public class TileLayersPlugin extends Plugin
 	@Subscribe
 	public void onPluginChanged(PluginChanged event)
 	{
-		clientThread.invoke(this::updateLootOverlayOrder);
+		clientThread.invoke(this::updateOverlayOrder);
 	}
 
 	@Subscribe
 	public void onProfileChanged(ProfileChanged event)
 	{
-		clientThread.invoke(this::updateLootOverlayOrder);
+		clientThread.invoke(this::updateOverlayOrder);
 	}
 
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
+		// Also catch scene overlays added during gameplay after plugin startup.
+		if (config.onlyTileAndMarkerPlugins() || config.keepLootAboveCharacters())
+		{
+			synchronized (overlayManager)
+			{
+				if (started && overlayMaskOrder.needsUpdate(overlayManager, config.keepLootAboveCharacters(), config.onlyTileAndMarkerPlugins())) updateOverlayOrder();
+			}
+		}
 		nearestActors.setExcludedNpcs(config.excludedBosses());
 		boolean enabled = client.isGpu() && config.overlayOpacity() < 100;
 		Player local = client.getLocalPlayer();
@@ -234,7 +242,7 @@ public class TileLayersPlugin extends Plugin
 
 		clientThread.invoke(() -> {
 			if (!started) return;
-			updateLootOverlayOrder();
+			updateOverlayOrder();
 			rebuild();
 		});
 	}

@@ -46,7 +46,7 @@ public interface TileLayersConfig extends Config
 
 	@ConfigItem(
 			keyName = "currentTileBelowPlayer",
-			name = "Draw overlays below player",
+			name = "Draw overlays below self",
 			description = "Requires GPU. Draws overlays below the player",
 			position = 1
 	)
@@ -105,7 +105,15 @@ public interface TileLayersConfig extends Config
 			description = "Keep Ground Items and Loot Filters overlays above players and NPCs, including their labels, timers, icons and item tile highlights. Other overlays still follow the character settings.",
 			position = 8
 	)
-	default boolean keepLootAboveCharacters() { return false; }
+	default boolean keepLootAboveCharacters() { return true; }
+
+    @ConfigItem(
+            keyName = "onlyTileAndMarkerPlugins",
+            name = "Only Tile and Marker plugins",
+            description = "Only apply character masking to Ground Markers, Tile Indicators, Line Markers, Radius Markers, Brush Markers, Object Markers, Agility and Improved Tile Indicators' destination tiles. Other scene overlays stay above characters. When off, the normal overlay and loot settings apply.",
+            position = 9
+    )
+    default boolean onlyTileAndMarkerPlugins() { return true; }
 
 	@Range(min = 0, max = NearestActors.MAX_LIMIT)
 	@ConfigItem(

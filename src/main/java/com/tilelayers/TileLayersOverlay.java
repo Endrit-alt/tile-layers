@@ -59,9 +59,9 @@ public class TileLayersOverlay extends Overlay {
         this.actorMask = new ActorOverlayMask(client);
         setPosition(OverlayPosition.DYNAMIC);
         setLayer(OverlayLayer.ABOVE_SCENE);
-        // Mask after normal scene overlays, including Loot Filters' HIGH-priority
-        // ground labels. Keep one pass before widgets and other UI are drawn.
-        setPriority(LootOverlayOrder.MASK_PRIORITY);
+        // Mask after selected scene overlays; OverlayMaskOrder schedules
+        // exceptions afterward. Keep one pass before widgets and other UI.
+        setPriority(OverlayMaskOrder.MASK_PRIORITY);
     }
 
     @Override
