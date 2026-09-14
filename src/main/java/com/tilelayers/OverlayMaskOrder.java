@@ -160,6 +160,11 @@ final class OverlayMaskOrder
                 || name.startsWith("com.bram91.brushmarkers.")
                 || name.startsWith("net.runelite.client.plugins.objectindicators.")
                 || name.startsWith("net.runelite.client.plugins.agility.")
+                || name.startsWith("com.betternpchighlight.")
+                || name.startsWith("net.runelite.client.plugins.npchighlight.")
+                // NPC Indicators renders through a shared scene overlay. Other
+                // users of that service share the same masking behavior.
+                || name.equals("net.runelite.client.game.npcoverlay.NpcOverlay")
                 // Our own overlay draws the Improved destination tile and/or
                 // applies the mask. It must never be moved after itself.
                 || name.equals("com.tilelayers.TileLayersOverlay")

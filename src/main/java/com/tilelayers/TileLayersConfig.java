@@ -110,7 +110,7 @@ public interface TileLayersConfig extends Config
     @ConfigItem(
             keyName = "onlyTileAndMarkerPlugins",
             name = "Only Tile and Marker plugins",
-            description = "Only apply character masking to Ground Markers, Tile Indicators, Line Markers, Radius Markers, Brush Markers, Object Markers, Agility and Improved Tile Indicators' destination tiles. Other scene overlays stay above characters. When off, the normal overlay and loot settings apply.",
+            description = "Only apply character masking to Ground Markers, Tile Indicators, Line Markers, Radius Markers, Brush Markers, Object Markers, Agility, Better NPC Highlight, NPC Indicators and Improved Tile Indicators' destination tiles. NPC Indicators' shared NPC highlights are included together. Other scene overlays stay above characters. When off, the normal overlay and loot settings apply.",
             position = 9
     )
     default boolean onlyTileAndMarkerPlugins() { return true; }
