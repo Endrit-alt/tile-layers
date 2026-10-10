@@ -10,8 +10,7 @@ repositories {
 	mavenCentral()
 }
 
-// Plugin Hub follows releases; a fixed official version can be used for verification.
-def runeLiteVersion = findProperty('runeliteVersion') ?: 'latest.release'
+def runeLiteVersion = 'latest.release'
 
 dependencies {
 	compileOnly group: 'net.runelite', name:'client', version: runeLiteVersion
