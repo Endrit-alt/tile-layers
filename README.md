@@ -10,4 +10,4 @@ Character masking uses current floating-point camera coordinates, footprint-awar
 
 The current checkbox names and short hover descriptions are included, including **Draw overlays below self**. Object masking, projectile masking, terrain detection, floor allowances and stair/floor-covering lists are experimental GPU API features and are not part of this release.
 
-Build with `gradlew build`. Dependencies come from official RuneLite releases; use `gradlew -PruneliteVersion=1.13.1 build` to verify against a fixed release. `TileLayersPluginTest` remains the standard development launcher. No replacement RuneLite classes or resources are bundled, and no dependency plugins are modified.
+Build with `gradlew build`. Dependencies come from official RuneLite releases; use `gradlew -PruneliteVersion=1.13.1 build` to verify against a fixed release. No replacement RuneLite classes or resources are bundled, and no dependency plugins are modified.
