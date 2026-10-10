@@ -1,5 +1,10 @@
 package com.tilelayers;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+import net.runelite.api.Actor;
+import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -14,9 +19,9 @@ public class RenderedActorsTest
     @Test
     public void sceneAdmissionAndOverheadsDoNotCreateMasks()
     {
-        RenderedActors rendered = new RenderedActors();
+        RenderedActors rendered = new RenderedActors(stub(Client.class, values("isClientThread", true)));
         Player local = stub(Player.class, values()), other = stub(Player.class, values());
-        rendered.beginFrame(local);
+        rendered.beginFrame(local, selected(other));
         assertTrue(rendered.addEntity(local, false));
         assertTrue(rendered.addEntity(other, true));
         assertFalse(rendered.contains(local)); assertFalse(rendered.contains(other));
@@ -24,22 +29,22 @@ public class RenderedActorsTest
         assertTrue(rendered.drawObject(null, object(stub(Renderable.class, values()))));
         assertTrue(rendered.drawObject(null, object(other)));
         assertTrue(rendered.contains(other)); assertFalse(rendered.contains(local));
-        rendered.beginFrame(local);
+        rendered.beginFrame(local, selected(other));
         assertFalse(rendered.contains(other));
         assertTrue(rendered.drawObject(null, object(local)));
         assertTrue(rendered.contains(local));
-        rendered.beginFrame(null);
+        rendered.beginFrame(null, selected());
         assertFalse(rendered.contains(local));
     }
 
     @Test
-    public void largeCrowdsCannotDisplaceSelfOrTheOtherCategory()
+    public void unselectedCrowdsCannotDisplaceSelectedActorsOrSelf()
     {
-        RenderedActors rendered = new RenderedActors();
+        RenderedActors rendered = new RenderedActors(stub(Client.class, values("isClientThread", true)));
         Player local = stub(Player.class, values());
         NPC npc = stub(NPC.class, values());
         Player overflow = stub(Player.class, values());
-        rendered.beginFrame(local);
+        rendered.beginFrame(local, selected(npc));
         for (int i = 0; i < 2000; i++)
             rendered.drawObject(null, object(stub(Player.class, values())));
         rendered.drawObject(null, object(overflow));
@@ -47,10 +52,17 @@ public class RenderedActorsTest
         rendered.drawObject(null, object(npc));
         rendered.drawObject(null, object(local));
         assertTrue(rendered.contains(npc)); assertTrue(rendered.contains(local));
-        rendered.beginFrame(local);
+        rendered.beginFrame(local, selected(overflow));
         rendered.drawObject(null, object(overflow));
         assertTrue(rendered.contains(overflow));
         assertFalse(rendered.contains(npc)); assertFalse(rendered.contains(local));
+    }
+
+    private static Set<Actor> selected(Actor... actors)
+    {
+        Set<Actor> result = Collections.newSetFromMap(new IdentityHashMap<>());
+        Collections.addAll(result, actors);
+        return result;
     }
 
     private static GameObject object(Renderable renderable)

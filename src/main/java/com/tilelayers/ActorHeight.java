@@ -41,14 +41,15 @@ final class ActorHeight
     {
         WorldView world = actor.getWorldView();
         LocalPoint location = actor.getLocalLocation();
-        if (world == null || location == null || client.getWorldView(location.getWorldView()) == null)
+        if (world == null || location == null || client.getWorldView(location.getWorldView()) != world)
         {
             return UNAVAILABLE;
         }
         int x = location.getSceneX(), y = location.getSceneY();
         if (x < 0 || y < 0 || x >= world.getSizeX() || y >= world.getSizeY()) return UNAVAILABLE;
         byte[][][] settings = world.getTileSettings();
-        if (settings == null || settings.length < 2 || x >= settings[1].length || y >= settings[1][x].length)
+        if (settings == null || settings.length < 2 || settings[1] == null || x >= settings[1].length
+                || settings[1][x] == null || y >= settings[1][x].length)
         {
             return UNAVAILABLE;
         }
