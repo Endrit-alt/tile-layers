@@ -152,6 +152,9 @@ final class GroundItemOcclusion
             if (sample >= Math.min(by, cy) && sample < Math.max(by, cy)) { double v = bx + (sample - by) * (cx - bx) / (cy - by); lo = Math.min(lo, v); hi = Math.max(hi, v); }
             if (sample >= Math.min(cy, ay) && sample < Math.max(cy, ay)) { double v = cx + (sample - cy) * (ax - cx) / (ay - cy); lo = Math.min(lo, v); hi = Math.max(hi, v); }
             int start = Math.max(clip.x, (int) Math.ceil(lo - 0.5)), end = Math.min(clip.x + clip.width, (int) Math.ceil(hi - 0.5));
+            // A clipped row can be empty even when the triangle crosses the viewport.
+            // Do not record its inverted span as dirty depth for the next frame.
+            if (start >= end) continue;
             double q = qa + (start + 0.5 - ax) * dx + (sample - ay) * dy;
             int first = end, last = start;
             for (int x = start; x < end; x++, q += dx)
