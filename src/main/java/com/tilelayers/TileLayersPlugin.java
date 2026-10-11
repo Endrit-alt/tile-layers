@@ -54,6 +54,7 @@ import java.util.*;
 
 @PluginDescriptor(
 		name = "Tile Layers",
+		conflicts = {"Improved Tile Indicators"},
 		description = "Draw overlays beneath players and NPCs, with adjustable opacity and a shared character limit.",
 		tags = {"overlay", "tile", "indicators"}
 )
